@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Teacher Desktop – Cross-Platform Private AI Assistant</title>
+  <meta name="description" content="A private, cross-platform AI assistant for Windows, macOS, and Linux, with privacy-first controls and audit-ready reporting." />
+
+  <link rel="icon" type="image/svg+xml" href="/assets/icons.svg#app-icon" />
+  <link rel="stylesheet" href="/css/style.css" />
+  <style>
+    @font-face {
+      font-family: 'Inter';
+      src: url('/assets/Inter.var.woff2') format('woff2');
+      font-weight: 100 900;
+      font-display: swap;
+    }
+    body { font-family: 'Inter', system-ui, sans-serif; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <a href="/" class="logo">
+        <img src="/assets/icons.svg#aiteacher" alt="AI Teacher Desktop" width="160" height="40" />
+      </a>
+      <nav>
+        <a href="#features">Features</a>
+        <a href="#downloads">Downloads</a>
+        <a href="#privacy">Privacy</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="hero" id="hero">
+    <div class="container hero-inner">
+      <div class="hero-text">
+        <h1>
+          AI Teacher Desktop
+          <span class="tagline">Private, cross-platform AI assistant builder</span>
+        </h1>
+        <p class="hero-lead">
+          Edit, inspect, and ship your own AI-powered teacher app, with full control over privacy, retention, and telemetry.
+        </p>
+        <a href="#downloads" class="btn btn-primary">Get the desktop app</a>
+      </div>
+      <div class="hero-visual">
+        <canvas id="three-canvas" loading="lazy" aria-hidden="true"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <section class="features" id="features">
+    <div class="container">
+      <h2>Modern privacy-first AI assistant</h2>
+      <ul class="feature-list">
+        <li>
+          <h3>Editable privacy dashboard</h3>
+          <p>Set retention windows, toggle local-only mode, and control what data is stored and for how long.</p>
+        </li>
+        <li>
+          <h3>Activity timeline &amp; audit logs</h3>
+          <p>Review recent privacy-relevant actions such as settings changes, purges, and report exports.</p>
+        </li>
+        <li>
+          <h3>Exportable privacy reports</h3>
+          <p>Download JSON or Markdown privacy reports for support, QA, or internal review.</p>
+        </li>
+        <li>
+          <h3>Cross-platform builds</h3>
+          <p>Same privacy model on Windows (portable <code>.exe</code>), macOS (<code>.dmg</code>), and Linux (<code>.AppImage</code>).</p>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="downloads" id="downloads">
+    <div class="container">
+      <h2>Download AI Teacher Desktop</h2>
+      <p>We ship platform-specific binaries suitable for developers and early adopters. Certificates will be added later.</p>
+
+      <div class="download-grid">
+        <a href="/downloads/ai-teacher-desktop-v0.1.0-win-portable.exe" class="download-card download-win">
+          <span class="platform-logo">💻</span>
+          <h3>Windows</h3>
+          <p>Portable .exe for Windows. No installer, no registry changes.</p>
+          <span class="link-text">Download portable .exe</span>
+        </a>
+
+        <a href="/downloads/ai-teacher-desktop-v0.1.0-mac-dmg.dmg" class="download-card download-mac">
+          <span class="platform-logo">🍎</span>
+          <h3>macOS</h3>
+          <p>Standalone .dmg image for macOS 12+. Drag into Applications.</p>
+          <span class="link-text">Download .dmg</span>
+        </a>
+
+        <a href="/downloads/ai-teacher-desktop-v0.1.0-linux-appimage.AppImage" class="download-card download-linux">
+          <span class="platform-logo">🐧</span>
+          <h3>Linux</h3>
+          <p>Portable .AppImage for most Linux distributions.</p>
+          <span class="link-text">Download .AppImage</span>
+        </a>
+      </div>
+
+      <div class="notes">
+        <p><strong>Notes:</strong> These are unsigned builds suitable for testing and development. In future releases, we will add platform-specific code-signing certificates.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="privacy" id="privacy">
+    <div class="container">
+      <h2>Privacy-first design</h2>
+      <p>AI Teacher Desktop is built with auditable controls, transparent data handling, and user-controlled retention.</p>
+
+      <ul class="privacy-list">
+        <li>
+          <strong>Retention settings:</strong> Planner routing, OCR telemetry, and incident bundles all have adjustable retention windows.
+        </li>
+        <li>
+          <strong>Local-only default:</strong> The assistant can run in local-only mode, with no data sent to remote servers.
+        </li>
+        <li>
+          <strong>Activity timeline:</strong> See recent privacy-relevant actions such as settings changes and purges.
+        </li>
+        <li>
+          <strong>Exportable audit reports:</strong> Download JSON or Markdown privacy reports for internal review or support.
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container">
+      <p>AI Teacher Desktop © 2026. Built with Electron, Three.js, and a privacy-first mindset.</p>
+      <nav class="footer-nav">
+        <a href="#privacy">Privacy</a>
+        <a href="https://github.com/you/ai-teacher-desktop" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js';
+    import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/controls/OrbitControls.js';
+
+    const canvas = document.getElementById('three-canvas');
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+
+    renderer.setClearColor(0x0a0a0a);
+    camera.position.set(0, 1, 3);
+    scene.add(camera);
+
+    const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambient);
+
+    const light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(5, 5, 5);
+    scene.add(light);
+
+    const geometry = new THREE.IcosahedronGeometry(1.2, 3);
+    const material = new THREE.MeshStandardMaterial({
+      color: 0x3b82f6,
+      metalness: 0.8,
+      roughness: 0.2,
+      emissive: 0x000000,
+      emissiveIntensity: 0.5
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.rotation.x = Math.PI * 0.1;
+    mesh.rotation.y = Math.PI * 0.1;
+    scene.add(mesh);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableZoom = false;
+    controls.enablePan = false;
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+
+    const rect = canvas.getBoundingClientRect();
+
+    function resize() {
+      const rect = canvas.getBoundingClientRect();
+      renderer.setSize(rect.width, rect.height);
+      camera.aspect = rect.width / rect.height;
+      camera.updateProjectionMatrix();
+    }
+
+    window.addEventListener('resize', resize);
+    resize();
+
+    function update(time) {
+      mesh.rotation.y += 0.002;
+      const top = rect.top - window.innerHeight;
+      const bottom = rect.bottom;
+      const total = bottom - top;
+      const progress = Math.max(0, Math.min(1, (window.scrollY - top) / total));
+      const tilt = Math.PI * 0.1 - Math.PI * 0.05 * progress;
+      camera.position.z = 3 - 1 * progress;
+      camera.up.set(0, 1, 0);
+      requestAnimationFrame(update);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    requestAnimationFrame(update);
+  </script>
+
+  <script src="/js/main.js"></script>
+</body>
+</html>

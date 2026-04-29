@@ -1,0 +1,70 @@
+import { useEffect, useState } from 'react';
+
+export type StagedAttachment = {
+  id: string;
+  filename: string;
+  mimeType: string;
+  bytes: Uint8Array;
+  /** Object URL for thumbnail rendering — created on add, revoked on remove. */
+  previewUrl: string;
+};
+
+type Props = {
+  attachments: StagedAttachment[];
+  onRemove: (id: string) => void;
+};
+
+/** Small horizontal strip of thumbnail chips. Each chip shows a 32×32
+ *  preview of the attached image with an X to remove. Hidden entirely
+ *  when no attachments are staged. */
+export function AttachmentTray({ attachments, onRemove }: Props) {
+  if (attachments.length === 0) return null;
+  return (
+    <div className="attachment-tray">
+      {attachments.map((a) => (
+        <AttachmentChip key={a.id} attachment={a} onRemove={onRemove} />
+      ))}
+    </div>
+  );
+}
+
+function AttachmentChip({
+  attachment,
+  onRemove,
+}: {
+  attachment: StagedAttachment;
+  onRemove: (id: string) => void;
+}) {
+  const [imgFailed, setImgFailed] = useState(false);
+  // Defensive cleanup if the chip unmounts while preview is still loading.
+  useEffect(() => () => setImgFailed(false), []);
+  return (
+    <span className="attachment-tray__chip" title={attachment.filename}>
+      {imgFailed ? (
+        <span className="attachment-tray__icon" aria-hidden="true">📎</span>
+      ) : (
+        <img
+          src={attachment.previewUrl}
+          alt={attachment.filename}
+          width={32}
+          height={32}
+          onError={() => setImgFailed(true)}
+        />
+      )}
+      <button
+        type="button"
+        className="attachment-tray__remove"
+        onClick={(e) => {
+          // Stop bubbling to keep the parent `.widget`'s drag region
+          // from consuming the click as a drag-end gesture.
+          e.stopPropagation();
+          onRemove(attachment.id);
+        }}
+        aria-label={`Remove ${attachment.filename}`}
+        title="Remove"
+      >
+        ×
+      </button>
+    </span>
+  );
+}

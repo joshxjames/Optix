@@ -1,0 +1,20 @@
+{
+  "name": "optix",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Optix — an open-source desktop AI teacher that can see your screen and guide you.",
+  "license": "MIT",
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @optix/desktop dev",
+    "build": "pnpm --filter @optix/desktop build",
+    "package": "pnpm --filter @optix/desktop package",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

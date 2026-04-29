@@ -1,0 +1,17 @@
+appId: com.optix.desktop
+productName: Optix
+copyright: Copyright (c) 2026 Optix contributors
+directories:
+  output: dist
+  buildResources: resources
+files:
+  - out/**
+  - package.json
+mac:
+  target: dmg
+  category: public.app-category.education
+  artifactName: ${productName}-${version}.${ext}
+win:
+  target: portable
+  artifactName: ${productName}-${version}.${ext}
+publish: null

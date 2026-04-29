@@ -1,0 +1,254 @@
+/*
+ * NOTE: The source markdown truncated this file mid-rule at ".download-card p { margin: 0 0 0.7".
+ * Everything below is faithful to what was in the md, with Unicode non-breaking hyphens (U+2011)
+ * normalized to ASCII hyphens so the CSS actually parses. The last rule is left incomplete
+ * as a marker that you'll need to finish `.download-card p` and any rules that came after it.
+ */
+
+:root {
+  --bg: #08080a;
+  --fg: #f5f5f7;
+  --primary: #3b82f6;
+  --primary-hover: #2563eb;
+  --muted: #9ca3af;
+  --card-bg: #0f0f11;
+  --border: #27272a;
+  --radius: 0.5rem;
+  --gap: 1.5rem;
+  --gap-sm: 0.75rem;
+  --container-width: 72rem;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  line-height: 1.6;
+  scroll-behavior: smooth;
+}
+
+.container {
+  max-width: var(--container-width);
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+/* Header */
+header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: linear-gradient(180deg, rgba(8, 8, 10, 0.9) 0%, rgba(8, 8, 10, 0.5) 100%);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+
+header .container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 4rem;
+}
+
+.logo img {
+  height: 2rem;
+}
+
+nav a {
+  margin-left: 1.5rem;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.875rem;
+  transition: color 0.2s;
+}
+
+nav a:hover {
+  color: var(--fg);
+}
+
+@media (max-width: 768px) {
+  header .container {
+    flex-wrap: wrap;
+  }
+  nav a {
+    margin: 0 0.75rem;
+  }
+}
+
+/* Hero */
+.hero {
+  padding: 4rem 0 7rem;
+}
+
+.hero-inner {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 3rem;
+  align-items: center;
+}
+
+.hero-text h1 {
+  font-size: 2.5rem;
+  line-height: 1.1;
+  margin: 0 0 0.5rem;
+  font-weight: 700;
+}
+
+.tagline {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 1.125rem;
+  color: var(--primary);
+  font-weight: 500;
+}
+
+.hero-lead {
+  max-width: 32rem;
+  margin: 1rem 0 1.5rem;
+  color: var(--muted);
+  font-size: 1.125rem;
+  font-weight: 400;
+}
+
+.hero-visual {
+  position: relative;
+  height: 30vh;
+  min-height: 240px;
+  max-height: 420px;
+  background: conic-gradient(from 0deg, #111827, #1f2937, #111827);
+  border-radius: 1.5rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+#three-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Buttons */
+.btn {
+  display: inline-block;
+  padding: 0.5rem 1.25rem;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.btn:active {
+  transform: scale(0.95);
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: var(--primary-hover);
+}
+
+/* Features */
+.features {
+  padding: 5rem 0;
+}
+
+.features h2 {
+  font-size: 2rem;
+  margin: 0 0 2rem;
+  text-align: center;
+}
+
+.feature-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 2rem;
+}
+
+.feature-list li {
+  margin: 0 0 2rem;
+}
+
+.feature-list h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+}
+
+/* Downloads */
+.downloads {
+  padding: 5rem 0;
+  background: radial-gradient(circle at center, rgba(20, 20, 24, 0.6) 0%, rgba(8, 8, 10, 0.9) 100%);
+  border-top: 1px solid var(--border);
+}
+
+.downloads h2 {
+  font-size: 2rem;
+  margin: 0 0 1rem;
+  text-align: center;
+}
+
+.downloads p {
+  text-align: center;
+  margin: 0 0 2rem;
+  max-width: 36rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.download-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+}
+
+@media (min-width: 768px) {
+  .download-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.download-card {
+  display: block;
+  padding: 1.5rem;
+  border-radius: var(--radius);
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  text-decoration: none;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+
+.download-card:hover {
+  border-color: var(--primary);
+  box-shadow: 0 10px 20px rgba(59, 130, 246, 0.1);
+  transform: translateY(-2px);
+}
+
+.download-card .platform-logo {
+  display: block;
+  font-size: 2rem;
+  margin: 0 0 0.5rem;
+  filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.4));
+}
+
+.download-card h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1.125rem;
+}
+
+/* TRUNCATED in source markdown — original ended here mid-rule:
+   .download-card p { margin: 0 0 0.7
+   You'll need to complete this rule and add the remaining sections
+   (.privacy, footer, etc.) yourself.
+*/

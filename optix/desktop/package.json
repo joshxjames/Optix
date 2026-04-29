@@ -1,0 +1,39 @@
+{
+  "name": "@optix/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Optix desktop app — floating AI teacher widget.",
+  "main": "./out/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit",
+    "package": "electron-vite build && electron-builder",
+    "package:win": "electron-vite build && electron-builder --win portable",
+    "package:mac": "electron-vite build && electron-builder --mac dmg"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "@google/generative-ai": "^0.21.0",
+    "@hurdlegroup/robotjs": "^0.12.3",
+    "electron-store": "^10.0.0",
+    "keytar": "^7.9.0",
+    "openai": "^4.73.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tesseract.js": "^5.1.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}

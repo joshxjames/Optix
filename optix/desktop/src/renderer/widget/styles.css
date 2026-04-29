@@ -1,0 +1,2222 @@
+:root {
+  --bg: rgba(16, 18, 24, 0.92);
+  --bg-solid: #101218;
+  --fg: #f5f6f8;
+  --muted: #9aa3b2;
+  --border: rgba(255, 255, 255, 0.08);
+  --accent: #6d8cff;
+  --accent-hover: #5a7bff;
+  --danger: #ef4444;
+  --warn: #f59e0b;
+  --ok: #22c55e;
+  --radius: 10px;
+  --radius-sm: 6px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+#root { width: 100%; height: 100%; }
+
+.widget {
+  /* `position: relative` so the absolutely-positioned scroll-down button
+     anchors against the widget instead of the document. */
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(16px);
+  -webkit-app-region: drag;
+  overflow: hidden;
+}
+
+/* Interactive surfaces opt out of the parent's drag region so the OS
+   doesn't swallow clicks/text-selection. Container rows (controls,
+   actions) and passive banners (attach-error, interrupt-queued) are
+   intentionally NOT listed here — their empty space inherits drag
+   from `.widget`, which makes the chrome a generous grab handle while
+   their interactive children (.btn, .mode-switch) re-claim no-drag
+   through their own selectors below. The body stays no-drag because
+   it owns scroll + user-select for the conversation content. */
+.widget__header,
+.widget__body,
+.widget__body *,
+.widget__prompt,
+.attachment-tray,
+.btn,
+.mode-switch,
+.privacy-toggle {
+  -webkit-app-region: no-drag;
+}
+
+/* Text-selection on the conversation content. The global `body` rule
+   disables selection by default; we re-enable it inside the conversation
+   surface so users can copy answers, prompts, steps, etc. The cursor
+   hint signals to users that text is grabbable. */
+.widget__body,
+.widget__body * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+/* Cursor hint on text-content elements only (not their button
+   descendants — proposed-action buttons inside .response should still
+   show pointer). Each rule here targets the actual text containers. */
+.user-bubble__text,
+.response__answer,
+.response__intent,
+.response__step-text,
+.response__warnings li,
+.loop__step-desc,
+.loop__message,
+.widget__error {
+  cursor: text;
+}
+
+.widget__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+}
+/* Compact mode: only the header is visible. Window height is also shrunk
+   from the main side so there's no empty pane underneath. */
+.widget--compact > *:not(.widget__header) {
+  display: none;
+}
+.widget--compact .widget__header {
+  border-bottom: none;
+}
+/* Lock the minimised widget in place. Compact mode snaps to the
+   bottom-right corner via `setWidgetCompact`; allowing drag from the
+   header would let the user yank it out of that anchored position,
+   which defeats the "predictable dock" UX. The override has to cover
+   both the parent (which sets drag at the top of the file) and the
+   header (which re-claims drag explicitly). */
+.widget--compact,
+.widget--compact .widget__header {
+  -webkit-app-region: no-drag;
+}
+
+.widget__brand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.widget__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+}
+
+.widget__model {
+  color: var(--muted);
+  margin-left: 4px;
+  font-size: 11px;
+}
+
+.widget__header-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.widget__controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+/* Tight cluster on the right side of the controls row — folder picker
+   + overlay toggle live here. The parent's `space-between` pushes
+   this block to the right; the inner 4px gap keeps the action icons
+   visually grouped instead of spread along the row. */
+.widget__controls-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Composite prompt container — frames the attachment thumbnails AND the
+   textarea as one visual input. The textarea inside loses its own border
+   so the wrap's border reads as the field. */
+.widget__prompt-wrap {
+  /* Single-source gap between body and prompt field — body itself has
+     no bottom padding, so this margin-top is the entire visual spacer. */
+  margin: 8px 12px 0;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  /* When focus is inside the textarea, light up the wrap's border (mirrors
+     the old textarea-only `:focus` effect). `:focus-within` propagates the
+     state from the textarea up to the wrap. */
+  transition: border-color 0.12s ease;
+}
+.widget__prompt-wrap:focus-within {
+  border-color: var(--accent);
+}
+
+/* The prompt input is a textarea + overlay sandwich. The overlay
+   renders the same text the user typed but with `/OA-{n}` tokens
+   wrapped in styled chips. The textarea sits on top with transparent
+   text (caret stays visible via `caret-color`) so what the user sees
+   is the styled overlay; what they type still flows through the
+   native textarea — selection, paste, IME, and accessibility all
+   stay built-in. */
+.widget__prompt-input {
+  position: relative;
+  display: block;
+}
+.widget__prompt {
+  /* `position: relative` so it stacks above the absolutely-positioned
+     overlay regardless of source order. */
+  position: relative;
+  margin: 0;
+  padding: 8px 10px;
+  background: transparent;
+  /* Transparent foreground hides the raw text; the overlay supplies
+     the visible glyphs. The caret keeps its colour explicitly so the
+     user always sees where they're typing. */
+  color: transparent;
+  caret-color: var(--fg);
+  border: 0;
+  border-radius: var(--radius-sm);
+  resize: none;
+  font: inherit;
+  outline: none;
+  user-select: text;
+  /* Match the overlay's whitespace handling so wrapping is identical. */
+  white-space: pre-wrap;
+  word-break: break-word;
+  width: 100%;
+  display: block;
+  box-sizing: border-box;
+}
+/* Selection still needs to read text — without this the highlighted
+   range looks empty since the foreground is transparent. */
+.widget__prompt::selection {
+  color: var(--fg);
+  background: rgba(109, 140, 255, 0.32);
+}
+.widget__prompt:disabled { opacity: 0.6; }
+/* Visual rendering of the prompt — same metrics as the textarea so
+   character positions align exactly. `pointer-events: none` lets
+   clicks fall through to the textarea for caret placement. */
+.widget__prompt-overlay {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 8px 10px;
+  font: inherit;
+  color: var(--fg);
+  pointer-events: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: hidden;
+  /* Match the textarea's line metrics so token chips align with the
+     transparent glyphs underneath the textarea cursor. */
+  line-height: inherit;
+  box-sizing: border-box;
+}
+/* The OA token chip — same accent palette as the active mode tab so
+   the visual language is consistent (white-on-blue tokens read as
+   "this is a controlled reference" rather than free text). The
+   background is drawn via a `::before` with negative horizontal
+   inset so the visual chip extends past the text edges WITHOUT
+   adding layout width — that keeps the textarea caret position
+   aligned with the underlying transparent glyphs. */
+.widget__prompt-token {
+  position: relative;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+.widget__prompt-token::before {
+  content: '';
+  position: absolute;
+  /* Hug the token text exactly — no horizontal overhang. The 1px
+     vertical inset stops the background from clipping ascenders. */
+  inset: 1px 0;
+  background: var(--accent);
+  border-radius: 4px;
+  z-index: -1;
+}
+
+.widget__actions {
+  display: flex;
+  gap: 8px;
+  /* Match the body's 12px horizontal inset so the actions row visually
+     spans the same width as the conversation above it. */
+  padding: 10px 12px;
+}
+/* The primary Send button stretches to fill the row's available space —
+   icon buttons (📎 Stop) sit at their natural 26px width on the right.
+   Without this the Send button hugged the left edge with empty space
+   to its right, which read as misaligned with the full-width body. */
+.widget__actions .btn--primary {
+  flex: 1 1 auto;
+}
+/* Inside the actions row, the icon button drops its fixed 26x26 sizing
+   so flex-stretch (the row's default `align-items`) drives its height
+   to match the Send button. `aspect-ratio: 1` keeps it visually square
+   regardless of the resulting row height. Other `.btn--icon` instances
+   elsewhere in the chrome (header, controls) keep their original 26px
+   feel because the override is scoped to `.widget__actions`. */
+.widget__actions .btn--icon {
+  width: auto;
+  height: auto;
+  min-width: 32px;
+  aspect-ratio: 1;
+}
+
+/* Body: a non-scrolling flex column that holds either the response card or
+   transient hint/error messages. The card itself owns the scroll, so the
+   card's outer dimensions never shift when content overflows. */
+.widget__body {
+  /* `flex: 1 1 0` (basis 0 — not auto) decouples the body's allocated
+     height from its content; combined with min-height: 0 this lets the
+     body actually scroll instead of growing to fit children. */
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* Same horizontal inset as the prompt input + buttons above. The
+     bottom inset lives on `.widget__prompt-wrap` (margin-top) instead
+     of stacking with body padding-bottom — combining both produced a
+     visible empty band between the body and the prompt field. */
+  padding: 0 12px 0;
+  /* `position: relative` anchors the bottom-edge fade pseudo-element
+     to the body so it sits flush above the prompt field regardless
+     of how much content is scrolled inside. */
+  position: relative;
+  /* The body is the single scroll container for the entire conversation
+     (past turns + active turn). New turns auto-scroll to bottom via a
+     useEffect on `pastTurns.length / activeTurnPrompt`. The thread div
+     inside no longer scrolls on its own — that produced a "two scrollers
+     fighting" layout where new messages overlapped older ones. */
+  overflow-y: auto;
+  /* Hide the scrollbar visually; mouse wheel still scrolls. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  user-select: text;
+}
+.widget__body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+/* Soft fade at the bottom of the body — but only when there's
+   content scrolled below the visible area. The renderer toggles
+   `widget__body--has-overflow` based on scroll + content size; the
+   pseudo-element only renders under that modifier so we don't paint
+   a gradient over empty space when the content is short.
+   `position: sticky` keeps it pinned to the visible bottom while
+   the body scrolls. */
+.widget__body--has-overflow::after {
+  content: '';
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 24px;
+  margin-top: -24px;
+  flex-shrink: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    var(--bg) 100%
+  );
+}
+
+.widget__hint {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 4px 0;
+}
+
+.widget__error {
+  padding: 8px 10px;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #fecaca;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+
+.widget__loading {
+  padding: 20px;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* Buttons */
+.btn {
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--fg);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  transition: background 0.12s, border-color 0.12s, opacity 0.12s;
+}
+.btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  flex: 1 1 auto;
+  font-weight: 500;
+}
+.btn--primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+
+.btn--danger {
+  background: transparent;
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.btn--danger:hover:not(:disabled) { background: rgba(239, 68, 68, 0.1); }
+
+/* Destructive-but-neutral: looks like every other small chrome button
+   at rest, picks up a subtle red tint only on hover/focus so the
+   destructive intent is signalled but doesn't visually shout from the
+   header bar. Used for the chat-history Delete button. */
+.btn--destructive {
+  /* Inherits the standard `.btn` border + background. The hover state
+     is the only colour cue. */
+}
+.btn--destructive:hover:not(:disabled) {
+  border-color: rgba(239, 68, 68, 0.45);
+  color: var(--danger);
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.btn--icon {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+}
+/* Inline SVG icons inside icon buttons must NOT intercept pointer
+   events — without this, moving the cursor across the painted
+   strokes (lines / circles / paths) flips the cursor between
+   `pointer` (on the button) and the SVG's default, producing a
+   visible flicker. Routing all events to the button parent
+   eliminates the flicker and also prevents the SVG from receiving
+   focus rings on its own. */
+.btn--icon svg {
+  pointer-events: none;
+}
+/* Tinted state for icon buttons that toggle a feature on (e.g. the
+   overlay button when the highlight is currently visible). */
+.btn--icon-active {
+  border-color: var(--accent);
+  background: rgba(109, 140, 255, 0.18);
+}
+.btn--icon-active:hover:not(:disabled) {
+  background: rgba(109, 140, 255, 0.28);
+}
+/* Recording state — red ring + dot to signal the next run will be
+   captured. Distinct from `--icon-active` because record arming
+   carries different connotations (capture, retention) than a
+   feature toggle. */
+.btn--icon-recording {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: rgba(239, 68, 68, 0.10);
+}
+.btn--icon-recording:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.18);
+}
+/* Disabled icon buttons fade — used by the overlay button when no
+   target regions exist yet. Position stays stable so the controls row
+   doesn't reflow when an answer arrives. */
+.btn--icon:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Mode switch */
+.mode-switch {
+  display: inline-flex;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  gap: 2px;
+}
+.mode-switch__btn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.mode-switch__btn:hover:not(:disabled) { color: var(--fg); }
+.mode-switch__btn--active {
+  background: rgba(109, 140, 255, 0.18);
+  color: var(--fg);
+}
+.mode-switch__btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Privacy toggle */
+.privacy-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--ok);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.privacy-toggle:hover { background: rgba(34, 197, 94, 0.18); }
+.privacy-toggle__indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 6px var(--ok);
+}
+
+.privacy-toggle--paused {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: var(--warn);
+}
+.privacy-toggle--paused:hover { background: rgba(245, 158, 11, 0.2); }
+.privacy-toggle--paused .privacy-toggle__indicator {
+  background: var(--warn);
+  box-shadow: 0 0 6px var(--warn);
+}
+
+/* Response card. Now a flex column so the inner scroll region can claim
+   leftover space — the card's outer width is constant, only the inner
+   `.response__scroll` shrinks by 6px when its scrollbar appears. */
+.response {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  /* Content-sized — the body now owns scrolling for the entire
+     conversation. The card grows with its answer; the body scrolls
+     when content exceeds the viewport. The card's old "fill body +
+     scroll inside" behaviour fought with the conversation thread when
+     both were present, leaving the active card squeezed to ~15px. */
+  flex: 0 0 auto;
+}
+
+/* Inner content region — once the parent body owns scrolling there's
+   no separate scroll inside the card. Kept as a no-op flex container
+   so existing class hooks still work; previously this was a scroller. */
+.response__scroll {
+  flex: 0 0 auto;
+}
+
+.response__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+.response__intent { font-style: italic; }
+.response__confidence { font-variant-numeric: tabular-nums; }
+
+.response__answer {
+  margin: 0 0 8px;
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.response__warnings {
+  margin: 8px 0;
+  padding-left: 0;
+  list-style: none;
+  color: var(--warn);
+  font-size: 12px;
+}
+.response__warnings li { margin: 2px 0; }
+
+.response__steps {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  font-size: 12px;
+}
+.response__steps li { margin: 3px 0; }
+.response__region-hint { color: var(--muted); font-size: 11px; }
+
+.response__actions {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  font-size: 12px;
+}
+.response__actions-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.response__action-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.response__action {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.response__action--running {
+  border-color: rgba(109, 140, 255, 0.5);
+}
+.response__action--done {
+  border-color: rgba(34, 197, 94, 0.4);
+  background: rgba(34, 197, 94, 0.05);
+}
+.response__action--failed {
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.05);
+}
+.response__action--skipped {
+  opacity: 0.55;
+}
+.response__action-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.response__action-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+.response__action-kind {
+  background: rgba(109, 140, 255, 0.18);
+  color: var(--accent);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-transform: uppercase;
+}
+.response__action-desc {
+  flex: 1;
+  min-width: 0;
+}
+.response__action-controls {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+.response__action-status {
+  font-size: 11px;
+  margin-top: 2px;
+}
+.response__action-status--ok { color: var(--ok); }
+.response__action-status--error {
+  color: var(--danger);
+  word-break: break-word;
+}
+.response__action-status--muted { color: var(--muted); }
+
+/* Smaller variant of the standard btn for the per-action controls. */
+.btn--small {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.response__overlay-actions {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+
+
+/* Streaming caret applied to whichever element is currently being filled.
+   Once steps start streaming the caret moves off the answer onto the last
+   step. After the stream completes, both modifiers go away and the caret
+   disappears entirely. */
+.response__answer--streaming::after,
+.response__step-text--streaming::after {
+  content: '▋';
+  color: var(--accent);
+  animation: blink 1s steps(2, start) infinite;
+  margin-left: 2px;
+}
+
+.response__timings {
+  /* Lives OUTSIDE the response card now — sibling, not nested. Pad it on
+     the sides only, keep it visually subordinate. */
+  margin-top: 8px;
+  padding: 4px 4px 0 4px;
+  font-size: 10px;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  flex: 0 0 auto;
+}
+
+/* Favicon chips for sources the model consulted. Live BELOW the response
+   card and ABOVE the timings — overlapping circles, hover lifts to reveal
+   the full chip. */
+.response__sources {
+  display: flex;
+  margin-top: 8px;
+  padding: 0 4px;
+  align-items: center;
+  flex: 0 0 auto;
+}
+.response__source-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: -6px;
+  border-radius: 50%;
+  background: var(--bg-solid);
+  border: 1.5px solid var(--bg);
+  overflow: hidden;
+  text-decoration: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition: transform 0.12s ease, z-index 0s linear 0s;
+  -webkit-app-region: no-drag;
+}
+.response__source-chip:first-child {
+  margin-left: 0;
+}
+.response__source-chip:hover {
+  transform: translateY(-2px);
+  z-index: 100 !important;
+}
+.response__source-chip img {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+  display: block;
+}
+.response__source-chip-fallback {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.response__search-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  margin-bottom: 6px;
+  border-radius: 4px;
+  background: rgba(109, 140, 255, 0.12);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.widget__streaming {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(109, 140, 255, 0.06);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  color: var(--fg);
+}
+.widget__streaming::after {
+  content: '▋';
+  color: var(--accent);
+  animation: blink 1s steps(2, start) infinite;
+  margin-left: 2px;
+}
+@keyframes blink {
+  to { visibility: hidden; }
+}
+
+.widget__streaming--placeholder {
+  color: var(--muted);
+  font-style: italic;
+}
+.widget__streaming--placeholder::after {
+  /* Reuse the same blinking caret so the transition to real text is seamless. */
+  content: '▋';
+  color: var(--accent);
+  animation: blink 1s steps(2, start) infinite;
+  margin-left: 2px;
+}
+.widget__streaming-text {
+  display: inline-block;
+  animation: placeholder-fade 0.5s ease-in;
+}
+@keyframes placeholder-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.settings-panel {
+  -webkit-app-region: no-drag;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.settings-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  -webkit-app-region: drag;
+}
+.settings-panel__header .btn {
+  -webkit-app-region: no-drag;
+}
+/* Push the right-side action (e.g. "Agent History") to the far edge,
+   regardless of the title's natural width. */
+.settings-panel__header-action {
+  margin-left: auto;
+}
+/* Multiple right-aligned actions stacked horizontally (Chat + Agent
+   history). The first child carries the auto-margin so the group sits
+   at the far edge as one unit. */
+.settings-panel__header-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+.settings-panel__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  scrollbar-width: none;
+}
+.settings-panel__body::-webkit-scrollbar {
+  display: none;
+}
+.settings-panel__section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-panel__label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.settings-panel__radios {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 10px;
+}
+.settings-panel__radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.settings-panel__row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.settings-panel__input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-solid);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: inherit;
+}
+.settings-panel__input--mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.settings-panel__input:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.settings-panel__hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.settings-panel__toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.settings-panel__toggle-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+}
+.settings-panel__section-title {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 2px;
+  font-weight: 500;
+}
+.settings-panel__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+/* Two-up row for compact field pairs (e.g. approval mode + cost ceiling).
+   Each child .settings-panel__field flexes to share the row evenly. */
+.settings-panel__field-row {
+  display: flex;
+  gap: 8px;
+}
+.settings-panel__field-row > .settings-panel__field {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.settings-panel__field > select,
+.settings-panel__field > input[type='number'] {
+  background: var(--bg-solid);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: inherit;
+}
+.settings-panel__field > select:focus,
+.settings-panel__field > input[type='number']:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.settings-panel__status {
+  font-size: 11px;
+  margin-top: 2px;
+}
+.settings-panel__status--ok { color: var(--ok); }
+.settings-panel__status--error { color: var(--danger); }
+.settings-panel__status--muted { color: var(--muted); }
+
+/* === Attachment tray (staged image uploads) === */
+/* Nested inside `.widget__prompt-wrap` so thumbnails sit at the top of
+   the prompt field rather than as their own widget row. Tighter spacing
+   (6px 8px 4px) since the wrap supplies the surrounding frame. */
+.widget__prompt-wrap .attachment-tray {
+  padding: 6px 8px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.attachment-tray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 12px 0;
+}
+.attachment-tray__chip {
+  position: relative;
+  display: inline-block;
+  width: 32px;
+  height: 32px;
+  background: var(--bg-solid);
+  /* No `overflow: hidden` here on purpose — that would clip the
+     overhanging X button's hit area. Visual rounding lives on the
+     inner image / icon instead. */
+}
+.attachment-tray__chip img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.attachment-tray__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.attachment-tray__remove {
+  position: absolute;
+  /* Overhang the chip's top-right corner so the X reads as a "remove"
+     badge. The chip no longer has `overflow: hidden`, so the entire
+     16×16 hit area stays visible AND clickable. */
+  top: -4px;
+  right: -4px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--bg-solid);
+  background: var(--danger);
+  color: white;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* `-webkit-app-region` doesn't reliably inherit from the chip's
+     <span> parent — set no-drag explicitly so the OS doesn't treat
+     this button as a window-drag handle and swallow the click. */
+  -webkit-app-region: no-drag;
+  z-index: 1;
+}
+.widget__attach-error {
+  margin: 4px 12px 0;
+  padding: 4px 8px;
+  background: rgba(239, 68, 68, 0.1);
+  border-left: 2px solid var(--danger);
+  color: var(--danger);
+  font-size: 11px;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+/* === Conversation thread (conversationMode) === */
+/* Stack of completed turns above the active card. The body itself owns
+   horizontal layout; this just provides vertical spacing between turns
+   and lets the whole area scroll when many turns accumulate. */
+.widget__thread {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* A bit of breathing room so the first turn's user bubble isn't flush
+     against the body's top edge — without this, the bubble's border can
+     read as clipped against the surrounding chrome. */
+  padding-top: 8px;
+  /* Pure logical wrapper — the body owns the single scroll container.
+     `flex-shrink: 0` keeps the thread at its content height so the
+     active turn below it never gets squeezed into a sliver. */
+  flex: 0 0 auto;
+}
+.widget__thread-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* User-message bubble — the prompt the user submitted, shown above each
+   turn's response. Right-aligned, accent-tinted background to distinguish
+   from the agent's response card below. */
+.user-bubble {
+  align-self: flex-end;
+  max-width: 85%;
+  padding: 8px 10px;
+  background: rgba(99, 102, 241, 0.18);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.user-bubble[data-mode='action'] {
+  /* Subtle warm tint so Access-mode prompts read distinctly from
+     Guide-mode prompts at a glance. */
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.32);
+}
+.user-bubble__text {
+  margin: 0;
+}
+.user-bubble__attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.user-bubble__attachment {
+  font-size: 10px;
+  color: var(--muted);
+  padding: 2px 5px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  white-space: nowrap;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* === Reused-screenshot indicator (smart capture reuse) === */
+/* Small inline badge that appears under the active user bubble when
+   the smart capture-reuse logic skipped a recapture. Aligned right to
+   sit visually under the bubble (which is also flex-end aligned). */
+.widget__reused-capture {
+  align-self: flex-end;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* === Choice prompt (ask_user meta tool) === */
+/* Vertical list of option buttons inside the agent loop progress.
+   Visually framed like an inline approval gate so the user knows
+   the agent is paused waiting for input. */
+.choice-prompt {
+  /* Sits inside `.loop__step` (3-col grid: icon / desc / status). Without
+     this, the choice prompt lands in the auto-sized icon column and
+     pushes the desc column down to ~0px wide, which makes the "Ask: …"
+     line wrap one character per row. Spanning all columns keeps the
+     prompt full-width on its own row underneath the desc. */
+  grid-column: 1 / -1;
+  margin: 6px 0;
+  padding: 10px 12px;
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.32);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.choice-prompt__question {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--fg);
+}
+.choice-prompt__options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.choice-prompt__option {
+  text-align: left;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  -webkit-app-region: no-drag;
+}
+.choice-prompt__option:hover {
+  background: rgba(99, 102, 241, 0.18);
+  border-color: rgba(99, 102, 241, 0.55);
+}
+.choice-prompt__option-label { font-weight: 500; }
+.choice-prompt__option-desc {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.choice-prompt__freeform {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.choice-prompt__freeform-input {
+  flex: 1;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font: inherit;
+  outline: none;
+  -webkit-app-region: no-drag;
+}
+.choice-prompt__freeform-input:focus { border-color: var(--accent); }
+
+/* === Plan tool gate === */
+/* Inline approval card rendered when the agent calls the plan tool.
+   Layout mirrors the choice-prompt + per-action approval gate. The
+   plan body uses a <pre> so the agent's whitespace + bullet structure
+   survives without a Markdown renderer. */
+.plan-gate {
+  grid-column: 1 / -1;
+  margin: 6px 0;
+  padding: 10px 12px;
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.32);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.plan-gate__rationale {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.plan-gate__body {
+  margin: 0;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.plan-gate__buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.plan-gate__feedback {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* === Pinned plan card (body header) === */
+/* Compact banner at the top of the body that shows the active plan
+   exists. Click opens the full plan view. Stays at the top of the
+   thread so the user can glance at the plan mid-task. */
+.plan-pinned {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  /* Small top margin so the banner doesn't sit flush against the
+     border below the controls row. */
+  margin: 10px 0 8px;
+  padding: 8px 10px;
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.32);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: var(--fg);
+  transition: background 0.12s, border-color 0.12s;
+}
+.plan-pinned:hover {
+  background: rgba(34, 197, 94, 0.14);
+  border-color: rgba(34, 197, 94, 0.5);
+}
+.plan-pinned__icon {
+  display: inline-flex;
+  color: var(--fg);
+  flex-shrink: 0;
+}
+.plan-pinned__label {
+  font-size: 11px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.plan-pinned__preview {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* === Documentation viewer === */
+/* Reuses the audit `.audit` shell so the back chrome, list rows, and
+   scroll behaviour are identical across history surfaces. The bits
+   here are what's specific to the docs surface: the search box, the
+   per-category headings, the article body block styles. */
+.docs__body {
+  padding-bottom: 16px;
+}
+.docs__search {
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  -webkit-app-region: no-drag;
+}
+.docs__search:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+  border-color: var(--accent);
+}
+.docs__category {
+  margin-bottom: 14px;
+}
+.docs__category-label {
+  margin: 0 0 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  font-weight: 500;
+}
+.docs__summary {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+  margin-top: 2px;
+  /* Keep the summary on a single line in the list view so dense
+     categories stay scannable. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.docs__summary--detail {
+  white-space: normal;
+  font-size: 12px;
+  margin: 0 0 12px;
+  padding: 6px 10px;
+  background: rgba(109, 140, 255, 0.08);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-sm);
+}
+.docs__detail {
+  /* Slightly tighter top padding on detail since the summary banner
+     already provides visual separation. */
+  padding-top: 10px;
+}
+.docs__article {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.docs__heading {
+  margin: 6px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.docs__paragraph {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--fg);
+}
+.docs__list {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.docs__list li {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg);
+}
+.docs__note {
+  padding: 8px 10px;
+  background: rgba(34, 197, 94, 0.08);
+  border-left: 2px solid var(--ok);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--fg);
+}
+.docs__code {
+  margin: 0;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* === Routines viewer (Automate tab history + detail) === */
+/* Reuses the audit viewer's `.audit__*` classes for list + detail
+   chrome (header, list rows, meta strip). The bits below are the
+   detail view's edit fields + reorderable action list. */
+.routines__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.routines__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.routines__field-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.routines__hint {
+  font-size: 10px;
+  color: var(--muted);
+}
+.routines__field-input,
+.routines__field-textarea {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+  resize: vertical;
+}
+.routines__field-input:focus,
+.routines__field-textarea:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+  border-color: var(--accent);
+}
+.routines__actions-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 4px;
+}
+.routines__action-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.routines__action {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+.routines__action-index {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.routines__action-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.routines__action-desc {
+  word-break: break-word;
+  min-width: 0;
+}
+.routines__action-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.routines__action-context strong {
+  color: var(--fg);
+  font-weight: 500;
+}
+.routines__action-controls {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.routines__action-controls .btn {
+  padding: 2px 6px;
+  font-size: 11px;
+  min-width: 22px;
+}
+
+/* === Slash menu (Automate routine picker) === */
+/* Anchored above the prompt input via absolute positioning inside
+   `.widget__prompt-wrap` (which is position:relative). Bottom-aligned
+   so the list grows upward when the routines list gets long. */
+.slash-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  margin-bottom: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--bg-solid, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  scrollbar-width: none;
+}
+.slash-menu::-webkit-scrollbar {
+  display: none;
+}
+.slash-menu__empty {
+  padding: 10px 12px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.slash-menu__item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  color: var(--fg);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  -webkit-app-region: no-drag;
+}
+.slash-menu__item--selected,
+.slash-menu__item:hover {
+  background: rgba(109, 140, 255, 0.18);
+}
+.slash-menu__item-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.slash-menu__item-meta {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.slash-menu__item-oa {
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(109, 140, 255, 0.18);
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Token chip rendered next to a routine's name in the list + detail
+   view — same shape as the slash-menu OA pill. */
+.routines__oa-tag {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(109, 140, 255, 0.18);
+  color: var(--fg);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The prompt wrap needs `position:relative` so the slash menu's
+   absolute positioning anchors against it. */
+.widget__prompt-wrap {
+  position: relative;
+}
+
+/* === Plan view (full-widget panel) === */
+/* Full-widget surface rendered when the user clicks the Plan button.
+   Same skeleton as Settings / audit detail — stacked column, header
+   chrome, scrolling body. */
+.plan-view {
+  /* Mirror the audit viewer's skeleton (which is the proven scrolling
+     pattern in this widget): `height: 100%` + `min-height: 0` on the
+     column, `flex-shrink: 0` on the fixed header, `flex: 1; min-height: 0;
+     overflow-y: auto` on the scrolling body. */
+  -webkit-app-region: no-drag;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.plan-view__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+}
+.plan-view__header .btn {
+  -webkit-app-region: no-drag;
+}
+.plan-view__title {
+  font-size: 12px;
+  font-weight: 500;
+}
+.plan-view__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* Bottom padding bumped up so the plan content doesn't sit flush
+     against the bottom edge of the widget when scrolled to the end. */
+  padding: 10px 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* Hide the scrollbar in both Firefox and WebKit so the plan
+     surface reads as clean reading copy, matching the audit /
+     settings panel hidden-scroll treatment. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.plan-view__body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+.plan-view__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.plan-view__rationale {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.plan-view__content {
+  margin: 0;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* === Mid-loop interrupt queued indicator === */
+.widget__interrupt-queued {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--fg);
+  background: rgba(99, 102, 241, 0.14);
+  border: 1px solid rgba(99, 102, 241, 0.32);
+  border-radius: var(--radius-sm);
+}
+.widget__interrupt-queued em {
+  font-style: normal;
+  color: var(--muted);
+  margin-left: 4px;
+  word-break: break-word;
+}
+
+/* === Provider reliability advisory === */
+.widget__advisory {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--warn);
+  background: rgba(245, 158, 11, 0.08);
+  color: var(--fg);
+  font-size: 11px;
+  line-height: 1.35;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+/* === Workspace folder button (in the controls row) === */
+/* Single toggle button — accent tint while a folder is set so the
+   user can see at a glance whether workspace scope is active. The
+   full path lives in the title attribute on hover; clicks toggle
+   between "set" (clears) and "unset" (opens picker). */
+.workspace-folder__btn--active {
+  border-color: var(--accent);
+  background: rgba(109, 140, 255, 0.12);
+  color: var(--fg);
+}
+.workspace-folder__btn--active:hover:not(:disabled) {
+  background: rgba(109, 140, 255, 0.22);
+}
+
+/* === Computer Use loop progress === */
+.loop--running .response__intent::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+  animation: loop-pulse 1.2s ease-in-out infinite;
+}
+@keyframes loop-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+.loop__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.loop__step {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 8px;
+  border-left: 2px solid var(--border);
+  font-size: 12px;
+}
+.loop__step--running { border-left-color: var(--accent); }
+.loop__step--done { border-left-color: var(--ok); }
+.loop__step--failed { border-left-color: var(--danger); }
+/* Model narration interleaved with the action steps. Mid-run messages get
+   the same blue strip as the running/pending step border so the eye reads
+   them as part of the same vertical timeline. The final message switches
+   to green to flag it as the conclusion. */
+.loop__message {
+  font-size: 12px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--accent);
+  color: var(--fg);
+  white-space: pre-wrap;
+  /* Long URLs / paths / unbroken tokens were spilling past the
+     coloured background. `overflow-wrap: anywhere` lets the renderer
+     break inside long words when needed; `min-width: 0` is the
+     usual flexbox-child workaround so the parent doesn't size to
+     its content. */
+  overflow-wrap: anywhere;
+  min-width: 0;
+  list-style: none;
+}
+.loop__message--final {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--ok);
+  background: rgba(34, 197, 94, 0.06);
+  font-weight: 500;
+}
+.loop__step--pending-approval {
+  border-left-color: var(--accent);
+}
+.loop__step-approval {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+.loop__step-approval-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* Toggled state for the "Type something" button while its textarea is open
+   — same accent tint we use elsewhere for active toggles. */
+.btn--toggled {
+  background: rgba(109, 140, 255, 0.22);
+  border-color: var(--accent);
+}
+.loop__step-feedback {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.loop__step-feedback-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 44px;
+  background: var(--bg-solid);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: inherit;
+}
+.loop__step-feedback-input:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.loop__step-icon { font-size: 13px; line-height: 1; color: var(--fg); }
+.loop__step-desc {
+  word-break: break-word;
+  min-width: 0;
+}
+.loop__step-status {
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.loop__step-status--running { color: var(--accent); }
+.loop__step-status--done { color: var(--ok); }
+.loop__step-status--failed { color: var(--danger); }
+.loop__step-error {
+  grid-column: 2 / span 2;
+  color: var(--danger);
+  font-size: 11px;
+  word-break: break-word;
+}
+
+/* === Audit log viewer === */
+/* `no-drag` here so the viewer works whether it's nested inside the
+   already-no-drag SettingsPanel (audit + chat history) OR mounted
+   directly under `.widget` like the Routines viewer. The explicit
+   drag on `.audit__header` below re-claims the title strip for
+   window dragging. */
+.audit {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  -webkit-app-region: no-drag;
+}
+.audit__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Matches `.settings-panel__header` (10px 12px) so the three top
+     bars — Settings, Agent History, Chat History — line up at the
+     same height when the user navigates between them. */
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+}
+.audit__header .btn { -webkit-app-region: no-drag; }
+.audit__title { font-size: 12px; font-weight: 500; flex: 1; }
+.audit__export { display: flex; gap: 4px; }
+.audit__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px;
+  /* Hide scrollbar visually but keep wheel/trackpad scrolling. Applies
+     to both Agent History and Chat History viewers. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.audit__body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+.audit__loading,
+.audit__empty {
+  padding: 24px 8px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+.audit__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.audit__list-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  color: var(--fg);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+}
+.audit__list-item:hover {
+  background: rgba(109, 140, 255, 0.06);
+  border-color: rgba(109, 140, 255, 0.4);
+}
+/* Top row in both list-item and detail-meta: badge cluster on the left,
+   time on the right via `space-between`. Shared rule keeps the
+   spacing-above-stats identical so the two surfaces line up visually. */
+.audit__list-row,
+.audit__detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.audit__list-time { font-size: 11px; color: var(--muted); }
+.audit__list-prompt {
+  font-size: 12px;
+  /* Single-line truncation with an ellipsis on overflow. Applies to
+     all three list viewers (Access Logs, Ask Logs, Automations) since
+     they all reuse this class. The full text stays available on
+     hover via the row's title tooltip if a caller supplies one. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Icon-pill row — used both as the per-item stats line in the list AND
+   as the meta-card stats line in the detail view. Inner pill geometry
+   (icon-to-number gap, font, colour) is identical; the two surfaces
+   diverge only on horizontal distribution: list rows stack pills
+   left-aligned (rows are tight and `space-between` would scatter
+   1-2 pills awkwardly), detail-meta uses `space-between` so the
+   summary band fills the card width. */
+.audit__list-meta,
+.audit__detail-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.audit__detail-stats {
+  justify-content: space-between;
+}
+.audit__list-meta > span,
+.audit__detail-stats > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.audit__badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-transform: uppercase;
+}
+.audit__badge--ok { background: rgba(34, 197, 94, 0.18); color: var(--ok); }
+.audit__badge--warn { background: rgba(245, 158, 11, 0.18); color: #f59e0b; }
+.audit__badge--error { background: rgba(239, 68, 68, 0.18); color: var(--danger); }
+.audit__badge--muted { background: rgba(156, 163, 175, 0.15); color: var(--muted); }
+.audit__badge--accent {
+  background: rgba(109, 140, 255, 0.22);
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+/* === Chat history viewer === */
+/* Chat-history list rows reuse `audit__list-item` styling unchanged
+   from the audit viewer — same padding, hover, badges, layout. The
+   only chat-history-specific UI here is the detail-view layout below
+   (turns + thumbnails). Delete lives in the header on the detail view,
+   not as a per-row affordance. */
+.audit__mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+}
+.chat-history__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+/* `.chat-history__meta` is no longer used — the Ask Log Details view
+   now reuses `.audit__detail-meta` for its top card so both viewers
+   share one styling source. Class kept removed to surface stragglers. */
+.chat-history__turns {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.chat-history__turn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.chat-history__user {
+  display: flex;
+  justify-content: flex-end;
+}
+.chat-history__bubble {
+  max-width: 85%;
+  padding: 8px 10px;
+  background: rgba(99, 102, 241, 0.18);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.chat-history__bubble[data-mode='action'] {
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.32);
+}
+.chat-history__prompt { margin: 0; }
+.chat-history__thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.chat-history__thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat-history__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.chat-history__agent {
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.chat-history__answer { margin: 0; white-space: pre-wrap; }
+.chat-history__steps {
+  margin: 6px 0 0;
+  padding-left: 22px;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* (Past-turn response cards inherit the same content-sized `.response`
+   rules as the active card now that the body owns scrolling.) */
+
+.audit__detail { display: flex; flex-direction: column; gap: 12px; }
+.audit__detail-meta {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+/* `.audit__detail-row` style is shared with `.audit__list-row` —
+   see the merged rule near the top of this file. Class kept here so
+   future changes know it's intentionally shared. */
+.audit__detail-prompt {
+  margin: 4px 0;
+  font-style: italic;
+  font-size: 12px;
+}
+.audit__detail-final {
+  margin: 6px 0;
+  padding: 6px 8px;
+  border-left: 3px solid var(--ok);
+  background: rgba(34, 197, 94, 0.06);
+  font-size: 12px;
+}
+.audit__detail-error {
+  margin: 6px 0;
+  color: var(--danger);
+  font-size: 12px;
+}
+/* `.audit__detail-stats` shares its rule with `.audit__list-meta` —
+   see the merged definition near the top of this file. */
+.audit__detail-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+/* === Per-user-message sections in the run-details view === */
+/* Each section groups the turns produced for one user prompt. With
+   conversation-mode continuity a single audit can span many prompts;
+   without these sections the turn list is a flat 50-row blob with no
+   indication of where the second / third / fourth user message starts. */
+.audit__message {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.audit__message-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 11px;
+  color: var(--muted);
+}
+.audit__message-label {
+  font-weight: 500;
+  color: var(--fg);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.audit__message-empty {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
+}
+.audit__turn {
+  border-left: 2px solid var(--border);
+  padding-left: 10px;
+}
+.audit__turn-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+.audit__turn-index { font-weight: 500; color: var(--muted); }
+.audit__turn-stats {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+.audit__turn-text {
+  font-size: 12px;
+  margin: 4px 0 6px;
+  padding: 4px 8px;
+  border-left: 2px solid var(--accent);
+  color: var(--fg);
+  white-space: pre-wrap;
+}
+/* Last turn's narration = agent's conclusion. Same green palette as the
+   live run UI's final message so the eye lands on it as the wrap-up. */
+.audit__turn-text--final {
+  border-left-color: var(--ok);
+  background: rgba(34, 197, 94, 0.06);
+  font-weight: 500;
+}
+.audit__turn-actions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.audit__action {
+  display: grid;
+  /* [kind icon] [description] [duration] [status icon] — duration is
+     omitted at render time when 0 / undefined, but the column reserves
+     space so adjacent rows align. */
+  grid-template-columns: auto 1fr auto auto;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  padding: 2px 4px;
+}
+.audit__action-kind-icon {
+  font-size: 13px;
+  line-height: 1;
+  color: var(--fg);
+}
+.audit__action--ok .audit__action-icon { color: var(--ok); }
+.audit__action--fail .audit__action-icon { color: var(--danger); }
+.audit__action-desc { word-break: break-word; min-width: 0; }
+.audit__action-duration {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.audit__action-error {
+  /* Span across description + duration + status columns so the error
+     wraps under the row instead of squeezing into one cell. */
+  grid-column: 2 / span 3;
+  color: var(--danger);
+  font-size: 11px;
+}
+
+/* === Approval gate === */
+.approval__quote {
+  margin: 8px 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--accent);
+  background: rgba(109, 140, 255, 0.08);
+  font-style: italic;
+}
+.approval__hint {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 8px 0 12px;
+}
+.approval__buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
