@@ -297,7 +297,17 @@ export function onUsageThisMonthChanged(
 }
 
 function toUsage(data: DocumentData): UsageThisMonth {
-  const inputTokens = numberOrZero(data.inputTokens);
+  // The relay reserves 50k tokens per in-flight request by incrementing
+  // BOTH `inputTokens` AND `reservedTokens` up-front, then nets the
+  // reservation back out when actual usage lands post-stream. Mid-flight
+  // the raw `inputTokens` therefore inflates by `reservedTokens` worth
+  // of phantom tokens — netting them out here gives the user a stable
+  // "what I've actually used" reading instead of a meter that briefly
+  // jumps by 50k per request and snaps back. Math invariant:
+  // displayedInputTokens = max(0, rawInput − reservedTokens).
+  const rawInputTokens = numberOrZero(data.inputTokens);
+  const reservedTokens = numberOrZero(data.reservedTokens);
+  const inputTokens = Math.max(0, rawInputTokens - reservedTokens);
   const outputTokens = numberOrZero(data.outputTokens);
   const cacheCreateTokens = numberOrZero(data.cacheCreateTokens);
   const cacheReadTokens = numberOrZero(data.cacheReadTokens);
