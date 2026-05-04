@@ -10,6 +10,7 @@ import { ipcMain, BrowserWindow } from 'electron';
 import { z } from 'zod';
 import { IPC } from '@shared/ipc';
 import {
+  isLoopbackActive,
   startLoopbackServer,
   stopLoopbackServer,
 } from '@main/auth/loopback-server';
@@ -38,6 +39,17 @@ const setPendingEmailSchema = z.object({
 
 export function registerAuthIpc(): void {
   ipcMain.handle(IPC.auth.startLoopback, async (event) => {
+    // Reject overlap — same guard `stripe.startCheckout` carries. The
+    // loopback server is a single shared resource; starting a second
+    // sign-in (or stepping on an in-flight checkout) would silently
+    // tear the first down and leave whichever flow lost the race
+    // broken. Surface the conflict instead.
+    if (isLoopbackActive()) {
+      throw new Error(
+        'Another sign-in or checkout is already in progress. Finish or cancel it first.',
+      );
+    }
+
     // Identify the calling renderer so we push the callback URL only to
     // the window that initiated this sign-in. With a single widget this
     // is overkill, but it future-proofs us against a settings popout or

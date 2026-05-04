@@ -2829,6 +2829,7 @@ export function App() {
                   <ErrorOrUpgradePrompt
                     message={t.message}
                     userProfile={userProfile}
+                    activeProviderId={settings?.activeProviderId}
                     onOpenSettings={() => setShowSettings(true)}
                   />
                 )}
@@ -2859,6 +2860,7 @@ export function App() {
                     <ErrorOrUpgradePrompt
                       message={status.message}
                       userProfile={userProfile}
+                      activeProviderId={settings?.activeProviderId}
                       onOpenSettings={() => setShowSettings(true)}
                     />
                   )}
@@ -3140,16 +3142,26 @@ export function App() {
 function ErrorOrUpgradePrompt({
   message,
   userProfile,
+  activeProviderId,
   onOpenSettings,
 }: {
   message: string;
   userProfile: UserProfile | null;
+  activeProviderId: ProviderId | undefined;
   onOpenSettings: () => void;
 }): JSX.Element {
-  // Cheap prefix check — the encoder's stable sentinel — so we don't
-  // pay a regex + JSON.parse for non-billing errors. UpgradePrompt
-  // does the full decode internally and renders accordingly.
-  if (message.startsWith('OPTIX_BILLING:')) {
+  // Gate the upgrade card on the active provider being Optix Cloud —
+  // the `OPTIX_BILLING:` sentinel is only meaningful in that flow, and
+  // a BYO-key model whose output happens to start with that string
+  // would otherwise spawn an unwarranted upgrade prompt. We accept the
+  // trade-off that a past-turn billing error stops surfacing the nudge
+  // if the user has since switched providers — they shouldn't be
+  // upsold for a flow they're no longer using. Cheap prefix check is
+  // first so non-billing errors still skip the regex + JSON.parse.
+  if (
+    activeProviderId === 'optixCloud' &&
+    message.startsWith('OPTIX_BILLING:')
+  ) {
     return (
       <UpgradePrompt
         errorMessage={message}

@@ -24,6 +24,12 @@ import {
   type LoopbackPathConfig,
 } from '@main/auth/loopback-server';
 
+// Tracks whether the currently-active loopback (if any) was started by
+// stripe.startCheckout — so cancelCheckout doesn't accidentally tear
+// down a magic-link sign-in's loopback when the user dismisses a
+// checkout dialog they never actually opened.
+let stripeOwnsLoopback = false;
+
 const CREATE_CHECKOUT_SESSION_URL =
   'https://us-central1-optix-22473.cloudfunctions.net/createCheckoutSession';
 const UPDATE_SUBSCRIPTION_URL =
@@ -142,6 +148,10 @@ export function registerStripeIpc(): void {
       if (!win || win.isDestroyed()) return;
       win.webContents.send(IPC.stripe.checkoutCallback, { url });
     }, { paths });
+    // Mark ownership only after the server is actually up — if the
+    // bind threw, the auth flow may already own the loopback and we
+    // mustn't claim it.
+    stripeOwnsLoopback = true;
 
     const successUrl = `http://127.0.0.1:${port}/checkout-success`;
     const cancelUrl = `http://127.0.0.1:${port}/checkout-cancel`;
@@ -182,7 +192,10 @@ export function registerStripeIpc(): void {
       }
       checkoutUrl = json.checkoutUrl;
     } catch (err) {
+      // Tear down the loopback we just started — and clear ownership
+      // so a subsequent cancelCheckout no-ops correctly.
       stopLoopbackServer();
+      stripeOwnsLoopback = false;
       throw err;
     }
 
@@ -196,7 +209,13 @@ export function registerStripeIpc(): void {
   });
 
   ipcMain.handle(IPC.stripe.cancelCheckout, async () => {
+    // No-op if no checkout is active — an unconditional stop here
+    // would tear down a concurrent magic-link sign-in's loopback (the
+    // two flows share the same single-server resource). The ownership
+    // flag tells us the loopback is ours to stop.
+    if (!stripeOwnsLoopback) return;
     stopLoopbackServer();
+    stripeOwnsLoopback = false;
   });
 
   ipcMain.handle(IPC.stripe.updateSubscription, async (_event, raw: unknown) => {
