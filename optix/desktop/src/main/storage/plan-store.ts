@@ -6,7 +6,7 @@
 // so the saved plan stays in conversation context.
 
 import { app } from 'electron';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { StoredPlanSchema, type StoredPlan } from '@shared/schemas';
@@ -47,7 +47,11 @@ export async function savePlan(opts: {
     updatedAt: now,
     loopId: opts.loopId,
   };
-  await writeFile(file, JSON.stringify(plan, null, 2), 'utf8');
+  // tmp + rename guards against process crash mid-write — the original
+  // file stays valid until rename atomically swaps it.
+  const tmp = `${file}.tmp`;
+  await writeFile(tmp, JSON.stringify(plan, null, 2), 'utf8');
+  await rename(tmp, file);
   return plan;
 }
 

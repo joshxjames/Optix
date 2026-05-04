@@ -116,6 +116,43 @@ export function registerProviderIpc(): void {
       flushTimer = setTimeout(flushChunks, 16);
     };
 
+    // ---- Throttled streaming-extraction cadence --------------------------
+    // Any extraction work that needs to scan the FULL accumulated response
+    // (e.g. answer/steps/warnings regex extraction for live preview) must
+    // hook into `runStreamingExtraction` rather than firing per onChunk.
+    // Per-chunk full-buffer regex is O(N²) in response length — Kimi runs
+    // emit 100-250 chunks, so a 5KB response would re-scan ~625KB of text.
+    //
+    // Trade-off: throttling to every-5-chunks-or-100ms means the live
+    // preview lags behind the streamed text by up to 100ms. The renderer
+    // is already buffer-coalescing at ~16ms for the visible delta, so this
+    // is consistent with the perceived streaming cadence and the user
+    // shouldn't notice the extraction lag. A FINAL pass runs unconditionally
+    // on stream completion so the post-stream `response` object is
+    // authoritative regardless of throttle cadence.
+    const EXTRACTION_CHUNK_INTERVAL = 5;
+    const EXTRACTION_TIME_INTERVAL_MS = 100;
+    let chunksSinceExtraction = 0;
+    let lastExtractionAt = 0;
+    // Hook point — left as a no-op today. When a future feature adds live
+    // structured extraction (intent/steps/answer preview), call the heavy
+    // regex from inside this function. The throttle in `maybeRunExtraction`
+    // guarantees it runs at most every 5 chunks or 100ms.
+    const runStreamingExtraction = (): void => {
+      // intentional no-op — placeholder for throttled per-chunk extraction.
+    };
+    const maybeRunExtraction = (): void => {
+      const now = performance.now();
+      if (
+        chunksSinceExtraction >= EXTRACTION_CHUNK_INTERVAL ||
+        now - lastExtractionAt >= EXTRACTION_TIME_INTERVAL_MS
+      ) {
+        chunksSinceExtraction = 0;
+        lastExtractionAt = now;
+        runStreamingExtraction();
+      }
+    };
+
     // Kick off OCR + UIA in parallel with the LLM call. Both are only useful
     // if the overlay is enabled and there's an actual screenshot — otherwise
     // the regions array will be empty and there's nothing to refine. The
@@ -163,12 +200,16 @@ export function registerProviderIpc(): void {
             if (ttftMs === undefined) {
               ttftMs = Math.round(now - t0);
               firstChunkAt = now;
+              lastExtractionAt = now;
             }
             lastChunkAt = now;
             chunkCount += 1;
+            chunksSinceExtraction += 1;
             charCount += delta.length;
             chunkBuffer += delta;
             scheduleFlush();
+            // Throttled — at most every 5 chunks or 100ms, never per-token.
+            maybeRunExtraction();
           },
           onSearch: (query) => {
             usedWebSearch = true;
@@ -206,6 +247,9 @@ export function registerProviderIpc(): void {
         credential,
       );
       flushChunks();
+      // Final extraction pass — run unconditionally at stream end so any
+      // throttled-skipped tail is captured.
+      runStreamingExtraction();
       const t1 = performance.now();
       const streamDurationMs =
         firstChunkAt !== undefined && lastChunkAt !== undefined

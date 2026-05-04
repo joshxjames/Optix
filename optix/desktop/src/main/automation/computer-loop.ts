@@ -24,6 +24,7 @@ import {
   type ComputerLoopStartRequest,
   type ComputerLoopTurn,
 } from '@shared/schemas';
+import { costForTurn } from '@shared/pricing';
 import { setWidgetFocusable } from '@main/windows/widget-window';
 import {
   finalizeAudit,
@@ -73,32 +74,45 @@ const loops = new Map<string, LoopState>();
 
 export { hasAgentSupport };
 
-/** Returns a synthetic 'done capped' turn if the loop's estimated cost has
- *  exceeded its ceiling, or null to continue. Side-effects: finalises the
- *  audit and removes the loop from the in-flight map. */
-function maybeCapByCost(state: LoopState): ComputerLoopTurn | null {
-  if (state.costCeilingUsd == null) return null;
-  const cost = getEstimatedCost(state.loopId);
-  if (cost === undefined) return null;
-  if (cost <= state.costCeilingUsd) return null;
-  const msg = `(stopped — estimated cost $${cost.toFixed(4)} exceeded ceiling $${state.costCeilingUsd.toFixed(2)})`;
-  loops.delete(state.loopId);
-  setWidgetFocusable(true);
-  finalizeAudit(state.loopId, 'capped', msg);
-  return {
-    loopId: state.loopId,
-    toolUses: [],
-    done: true,
-    finalText: msg,
-    turnIndex: state.turnIndex,
-    capped: true,
-  };
-}
-
 /** Run one provider-side step + record it to the audit. Returns the turn
- *  payload the renderer needs to drive execution. */
+ *  payload the renderer needs to drive execution.
+ *
+ *  Cost-ceiling invariant: the user is never billed for a turn that crosses
+ *  the ceiling — if a turn would cross it, we record the audit (so the run
+ *  is debuggable) but tell the user it was capped before the next call goes
+ *  out. The check has to happen BEFORE the loop sends another adapter call,
+ *  not after; otherwise the just-finished turn's cost is already paid past
+ *  the cap. We compute the post-turn estimate by adding this turn's
+ *  `costForTurn` to the existing `getEstimatedCost(loopId)` value (which
+ *  reads from the audit log, so the order matters: the audit must NOT yet
+ *  contain this turn when we read it). If the projected total exceeds the
+ *  ceiling, finalise with outcome='capped' (turn included so it's
+ *  auditable) and return a synthetic capped turn. Edge case: the very
+ *  first turn alone exceeds the cap — still persisted (audit shows what
+ *  burned the budget) then immediately capped. */
 async function stepAndRecord(state: LoopState): Promise<ComputerLoopTurn> {
   const result = await state.adapter.step(state.adapterState, state.abortController.signal);
+
+  // Project the post-turn cost BEFORE writing the audit row. `getEstimatedCost`
+  // reads from the in-memory audit log (which does not yet include this
+  // turn), so adding `costForTurn(...)` for the just-returned usage gives
+  // the accurate post-this-turn total. Doing the cap check after
+  // `recordTurn` would already have committed the over-budget row to disk
+  // before the user could be told.
+  const projectedCost =
+    state.costCeilingUsd != null
+      ? (getEstimatedCost(state.loopId) ?? 0) +
+        costForTurn(state.modelId, {
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
+          cacheCreationInputTokens: result.cacheCreationInputTokens,
+          cacheReadInputTokens: result.cacheReadInputTokens,
+        })
+      : null;
+  const overCeiling =
+    state.costCeilingUsd != null &&
+    projectedCost != null &&
+    projectedCost > state.costCeilingUsd;
 
   // Always record the model's text on every turn, including the final
   // `done` one. Originally the wrap-up text was kept aside for
@@ -107,6 +121,9 @@ async function stepAndRecord(state: LoopState): Promise<ComputerLoopTurn> {
   // would be lost from the audit. Storing it on the turn itself means
   // the viewer renders it under the last "Turn N" entry whether or not
   // the loop is later torn down.
+  //
+  // We still record the over-ceiling turn into the audit so the run is
+  // debuggable — the user just doesn't get charged for any further calls.
   recordTurn(state.loopId, {
     turnIndex: state.turnIndex,
     apiMs: result.apiMs,
@@ -129,6 +146,26 @@ async function stepAndRecord(state: LoopState): Promise<ComputerLoopTurn> {
       `parseErrors=${result.parseErrorIds.length} ` +
       `cache_create=${result.cacheCreationInputTokens ?? 0} cache_read=${result.cacheReadInputTokens ?? 0}`,
   );
+
+  if (overCeiling) {
+    const msg = `(stopped — estimated cost $${projectedCost!.toFixed(4)} exceeded ceiling $${state.costCeilingUsd!.toFixed(2)})`;
+    loops.delete(state.loopId);
+    setWidgetFocusable(true);
+    // finalizeAudit runs AFTER recordTurn so the persisted audit reflects
+    // the actual tokens burned (matching `projectedCost`), then stamps
+    // outcome='capped'. Even if the model returned `done: true` on this
+    // same turn we still report `capped: true` to the renderer because
+    // the run was halted by the ceiling, not by the agent finishing.
+    finalizeAudit(state.loopId, 'capped', msg);
+    return {
+      loopId: state.loopId,
+      toolUses: [],
+      done: true,
+      finalText: '(stopped — estimated cost would exceed ceiling)',
+      turnIndex: state.turnIndex,
+      capped: true,
+    };
+  }
 
   // When the agent reaches end_turn, stamp the audit with outcome='done'
   // and the wrap-up text right now. Option-A continuity keeps the loop
@@ -209,8 +246,6 @@ export async function startComputerLoop(
 
   try {
     const turn = await stepAndRecord(state);
-    const capped = maybeCapByCost(state);
-    if (capped) return capped;
     if (turn.done) {
       // The agent finished its current task, but we keep `state` in
       // `loops` so a follow-up user message can resume the same
@@ -219,10 +254,21 @@ export async function startComputerLoop(
       // when the user starts a new conversation or toggles
       // conversationMode off. Widget focus is restored so the user
       // can interact with our UI while the loop is paused.
+      //
+      // (Cost-cap is handled inside `stepAndRecord` — if the just-
+      // finished turn pushed the total over the ceiling it returns
+      // `capped: true` already finalised, so we never reach here for
+      // an over-ceiling run.)
       setWidgetFocusable(true);
     }
     return turn;
   } catch (err) {
+    // Abort FIRST so any adapter awaiting `signal` (e.g. an in-flight
+    // fetch in the Anthropic SDK) unwinds rather than hanging
+    // indefinitely. Without this, swallowed errors leave the
+    // AbortController in its initial state and the next adapter call
+    // can race against an orphaned promise.
+    state.abortController.abort();
     loops.delete(loopId);
     setWidgetFocusable(true);
     finalizeAudit(
@@ -312,16 +358,18 @@ export async function continueComputerLoop(
 
   try {
     const turn = await stepAndRecord(state);
-    const capped = maybeCapByCost(state);
-    if (capped) return capped;
     if (turn.done) {
       // Keep `state` alive for a possible follow-up user message — same
       // pattern as `startComputerLoop` above. Widget focus restored so
       // the user can type their next message into our input field.
+      // Cost-cap handled inside `stepAndRecord` (see comment there).
       setWidgetFocusable(true);
     }
     return turn;
   } catch (err) {
+    // See `startComputerLoop` catch — abort first so the adapter's
+    // pending fetch unwinds.
+    state.abortController.abort();
     loops.delete(req.loopId);
     setWidgetFocusable(true);
     finalizeAudit(
@@ -394,13 +442,14 @@ export async function appendUserMessageToLoop(
 
   try {
     const turn = await stepAndRecord(state);
-    const capped = maybeCapByCost(state);
-    if (capped) return capped;
     if (turn.done) {
       setWidgetFocusable(true);
     }
     return turn;
   } catch (err) {
+    // See `startComputerLoop` catch — abort first so the adapter's
+    // pending fetch unwinds.
+    state.abortController.abort();
     loops.delete(req.loopId);
     setWidgetFocusable(true);
     finalizeAudit(

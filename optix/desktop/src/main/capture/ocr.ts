@@ -10,23 +10,34 @@ export type OcrBox = {
 // process lifetime; subsequent recognise() calls reuse the warm worker.
 let workerPromise: Promise<Worker> | null = null;
 
-async function getWorker(): Promise<Worker> {
-  if (workerPromise) return workerPromise;
-  workerPromise = (async () => {
-    const t0 = performance.now();
-    // tesseract.js v5 exposes a single-arg form that loads, initializes, and
-    // sets the language in one shot.
-    const worker = await createWorker('eng');
-    console.log(
-      `[optix-timing] ocr worker init took ${Math.round(performance.now() - t0)}ms (cold)`,
-    );
-    return worker;
-  })().catch((err) => {
-    // Reset so a future call can retry rather than perpetually returning the
-    // failed promise.
-    workerPromise = null;
-    throw err;
-  });
+// Exported so main/index.ts can fire a non-awaited pre-warm at startup —
+// that way the user's first OCR-bearing prompt doesn't pay the WASM init
+// cost in the foreground.
+export function getWorker(): Promise<Worker> {
+  if (!workerPromise) {
+    // Build the init promise inside an IIFE that nulls the cache before
+    // re-throwing — a rejected promise stuck in `workerPromise` would mean
+    // OCR is permanently broken for the rest of the session, even though
+    // a transient init failure (network blip pulling the language pack,
+    // disk-full during cache write) is recoverable on retry.
+    workerPromise = (async () => {
+      try {
+        const t0 = performance.now();
+        // tesseract.js v5 exposes a single-arg form that loads, initializes,
+        // and sets the language in one shot.
+        const worker = await createWorker('eng');
+        console.log(
+          `[optix-timing] ocr worker init took ${Math.round(performance.now() - t0)}ms (cold)`,
+        );
+        return worker;
+      } catch (err) {
+        // Drop the cached rejection so the NEXT call retries rather than
+        // re-receiving the same rejected promise forever.
+        workerPromise = null;
+        throw err;
+      }
+    })();
+  }
   return workerPromise;
 }
 

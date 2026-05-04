@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useEffect } from 'react';
 import type { StoredPlan } from '../../../shared/schemas';
 
 type Props = {
@@ -13,17 +13,30 @@ function formatTimestamp(iso: string): string {
 
 function PlanViewImpl({ plan, onClose, onClear }: Props) {
   const wasUpdated = plan.updatedAt !== plan.createdAt;
+  // Native confirm — cheap interim guard until a designed modal lands.
+  const onClickClear = (): void => {
+    if (!window.confirm('Clear the active plan? Any saved progress will be lost.')) return;
+    onClear();
+  };
+  // Modal hygiene: Escape closes the plan view.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
   return (
     <div className="plan-view">
       <header className="plan-view__header">
-        <button type="button" className="btn btn--small" onClick={onClose}>
+        <button type="button" className="btn btn--small" onClick={onClose} autoFocus>
           ← Back
         </button>
         <span className="plan-view__title">Active plan</span>
         <button
           type="button"
           className="btn btn--small btn--destructive"
-          onClick={onClear}
+          onClick={onClickClear}
           title="Discard the current plan"
         >
           Clear

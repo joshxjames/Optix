@@ -9,7 +9,7 @@
 //  • Future deletion is just unlinking a file.
 
 import { app } from 'electron';
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import {
@@ -25,6 +25,16 @@ function getRoutinesDir(): string {
 
 function fileFor(id: string): string {
   return path.join(getRoutinesDir(), `${id}.json`);
+}
+
+/** Atomic write of a routine's JSON. Writes to `<id>.json.tmp` first
+ *  then renames into place so a crash mid-write leaves the previous
+ *  file intact rather than half-truncating it. */
+async function writeRoutineFileAtomic(routine: Routine): Promise<void> {
+  const target = fileFor(routine.id);
+  const tmp = `${target}.tmp`;
+  await writeFile(tmp, JSON.stringify(routine, null, 2), 'utf8');
+  await rename(tmp, target);
 }
 
 /** Derive a clean default name from the user's original prompt. The
@@ -85,7 +95,7 @@ async function backfillOaNumbers(routines: Routine[]): Promise<Routine[]> {
   for (const r of unnumbered) {
     r.oaNumber = next++;
     try {
-      await writeFile(fileFor(r.id), JSON.stringify(r, null, 2), 'utf8');
+      await writeRoutineFileAtomic(r);
     } catch {
       /* best-effort migration */
     }
@@ -134,7 +144,7 @@ export async function saveNewRoutine(opts: {
   };
   try {
     await mkdir(getRoutinesDir(), { recursive: true });
-    await writeFile(fileFor(id), JSON.stringify(routine, null, 2), 'utf8');
+    await writeRoutineFileAtomic(routine);
     return routine;
   } catch (err) {
     console.warn(
@@ -207,7 +217,7 @@ export async function updateRoutine(
     updatedAt: new Date().toISOString(),
   };
   try {
-    await writeFile(fileFor(id), JSON.stringify(updated, null, 2), 'utf8');
+    await writeRoutineFileAtomic(updated);
     return updated;
   } catch (err) {
     console.warn(

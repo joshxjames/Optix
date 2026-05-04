@@ -118,6 +118,18 @@ export function SettingsPanel({ settings, onClose }: Props) {
     kind: 'idle',
   });
 
+  // Modal hygiene: Escape closes the panel. Only fires for the root
+  // settings view — sub-views (audit/chat/routines) own their own key
+  // handlers and pop back to settings rather than dismissing it.
+  useEffect(() => {
+    if (view !== 'settings') return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [view, onClose]);
+
   // Subscribe to Firebase auth state once. The SDK rehydrates from
   // IndexedDB on mount, so this fires immediately with the persisted
   // user if any — no need for a separate "check on load" step.
@@ -305,7 +317,12 @@ export function SettingsPanel({ settings, onClose }: Props) {
   return (
     <div className="settings-panel">
       <div className="settings-panel__header">
-        <button type="button" className="btn btn--small" onClick={onClose}>
+        <button
+          type="button"
+          className="btn btn--small"
+          onClick={onClose}
+          autoFocus
+        >
           ← Back
         </button>
         <strong>Settings</strong>
@@ -438,7 +455,7 @@ export function SettingsPanel({ settings, onClose }: Props) {
         )}
 
         <section className="settings-panel__section">
-          <label className="settings-panel__label">Hotkey</label>
+          <label className="settings-panel__label">Keyboard shortcut</label>
           <input
             type="text"
             className="settings-panel__input settings-panel__input--mono"
@@ -928,7 +945,15 @@ function ActivePlanView({
           <button
             type="button"
             className="btn btn--small"
-            onClick={() => void callUpdate('cancel')}
+            onClick={() => {
+              if (
+                !window.confirm(
+                  "Cancel your subscription? You'll keep access until the end of the current billing period.",
+                )
+              )
+                return;
+              void callUpdate('cancel');
+            }}
             disabled={isBusy}
           >
             {isBusy && manageStatus.action === 'cancel'
@@ -939,7 +964,18 @@ function ActivePlanView({
         <button
           type="button"
           className="btn btn--small"
-          onClick={doSignOut}
+          onClick={() => {
+            // Subscribed users get a confirm — signing out doesn't
+            // cancel the subscription, but it does lock them out of
+            // cloud features until they re-auth, which is worth a beat.
+            if (
+              !window.confirm(
+                "Sign out of Optix Cloud? You'll need to sign in again to use cloud features.",
+              )
+            )
+              return;
+            doSignOut();
+          }}
           disabled={isBusy}
         >
           Sign out

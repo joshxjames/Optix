@@ -479,15 +479,33 @@ async function expandRoutineTokens(prompt: string): Promise<string> {
     numbers.map((n) => window.optix.routines.readByOaNumber(n).catch(() => null)),
   );
   const byNumber = new Map<number, Routine>();
+  // L5 — Track the unresolved tokens so we can both (a) replace them in
+  // the user-visible prompt with a "[/OA-N — deleted]" marker (so the
+  // model doesn't silently inherit a literal `/OA-7` it can't act on)
+  // and (b) console.warn for the developer. Leaving the token bare let
+  // the agent guess at semantics it had no way to recover.
+  const missing: number[] = [];
   for (let i = 0; i < numbers.length; i++) {
     const r = resolved[i];
-    if (r) byNumber.set(numbers[i] as number, r);
+    const n = numbers[i] as number;
+    if (r) byNumber.set(n, r);
+    else missing.push(n);
   }
-  if (byNumber.size === 0) return prompt;
+  if (missing.length > 0) {
+    console.warn(
+      `[optix-routines] /OA-${missing.join(', /OA-')} not found — replacing with deleted markers in the prompt`,
+    );
+  }
+  if (byNumber.size === 0 && missing.length === 0) return prompt;
   const annotated = prompt.replace(re, (full, numStr: string) => {
-    const r = byNumber.get(Number(numStr));
-    return r ? `${full} ("${r.name}")` : full;
+    const n = Number(numStr);
+    const r = byNumber.get(n);
+    if (r) return `${full} ("${r.name}")`;
+    // Deleted / unknown — replace the token so the model sees a clear
+    // signal rather than a literal slash-token it might try to invoke.
+    return `[/OA-${n} — deleted]`;
   });
+  if (byNumber.size === 0) return annotated;
   const hintBlocks = Array.from(byNumber.values()).map(buildRoutineHintBlock);
   return [
     annotated.trim(),
@@ -536,6 +554,40 @@ export function App() {
   // read or clear the plan.
   const [savedPlan, setSavedPlan] = useState<StoredPlan | null>(null);
   const [showPlanView, setShowPlanView] = useState(false);
+
+  // U1 — Modal focus restore. Save the element that had focus right
+  // before a modal opens so we can hand it back when the modal closes.
+  // The modal components themselves (Agent E owns those) are
+  // responsible for moving focus INTO the modal on mount and
+  // honouring Escape; this ref is just the App-side bookkeeping that
+  // makes sure the user lands back where they were rather than on
+  // <body>. One ref covers all three modals because at most one is
+  // ever open at a time.
+  const lastFocusedBeforeModalRef = useRef<HTMLElement | null>(null);
+  const isAnyModalOpen = showSettings || showDocs || showPlanView;
+  useEffect(() => {
+    if (isAnyModalOpen) {
+      // Snapshot the current focus before the modal mounts and steals it.
+      const active = document.activeElement;
+      if (active instanceof HTMLElement) {
+        lastFocusedBeforeModalRef.current = active;
+      }
+    } else {
+      // Modal closed — restore. Guarded against the saved element
+      // having been unmounted in the interim (e.g. a settings change
+      // re-rendered the controls row); failure is silent because
+      // <body> already has focus by default at that point.
+      const prev = lastFocusedBeforeModalRef.current;
+      lastFocusedBeforeModalRef.current = null;
+      if (prev && document.contains(prev)) {
+        try {
+          prev.focus();
+        } catch {
+          /* ignore — focus call can throw on some odd elements */
+        }
+      }
+    }
+  }, [isAnyModalOpen]);
 
   // Automate-mode recording. The Record toggle is per-run: when ON,
   // the next Automate run captures its actions + agent narration and
@@ -973,6 +1025,37 @@ export function App() {
     });
   }, [settings?.conversationMode]);
 
+  // L6 — Provider-switch-mid-loop guard. Once a loop is running, its
+  // adapter + auth token are bound to whichever provider was active at
+  // start. If `activeProviderId` flips under us (Settings → switch
+  // provider), the next continue() call will mint an auth token for
+  // the wrong provider and the relay rejects it. Detect the mismatch
+  // here and abort the loop with a clear error so the user knows to
+  // restart. The check is gated on an actively-running loop
+  // (`loopAbortRef.current.loopId` non-null) to avoid firing during
+  // ordinary settings churn.
+  useEffect(() => {
+    const newProvider = settings?.activeProviderId;
+    if (!newProvider) return;
+    const startProvider = loopStartProviderRef.current;
+    const runningId = loopAbortRef.current.loopId;
+    if (!startProvider || !runningId) return;
+    if (newProvider === startProvider) return;
+    // Mismatch — tear the loop down. Set the abort flag first so the
+    // post-IPC checks (L2) bail before any further state touches.
+    loopAbortRef.current.aborted = true;
+    void window.optix.computer.abort(runningId).catch(() => {
+      /* ignore */
+    });
+    if (liveLoopIdRef.current === runningId) liveLoopIdRef.current = null;
+    loopStartProviderRef.current = null;
+    setStatus({
+      kind: 'error',
+      message: 'Provider switched mid-task. Restart your task to continue.',
+    });
+    setBusySince(null);
+  }, [settings?.activeProviderId]);
+
   const isBusy =
     status.kind === 'capturing' ||
     status.kind === 'thinking' ||
@@ -1030,6 +1113,12 @@ export function App() {
   // reset, mode toggle off, or explicit abort. When null, submit takes
   // the fresh-loop path (computer.start).
   const liveLoopIdRef = useRef<string | null>(null);
+  // L6 — Provider id snapshotted at the moment the active loop started,
+  // so a mid-loop `activeProviderId` change can be detected and the
+  // loop torn down before its next turn fires with stale credentials.
+  // Set by runLoop after the start/appendUserMessage IPC succeeds;
+  // cleared when the loop ends (done / aborted / errored).
+  const loopStartProviderRef = useRef<ProviderId | null>(null);
   // Mirror current settings into a ref so the empty-dep runLoop closure
   // can read FRESH values instead of the value at first-render. Without
   // this, `settings` inside runLoop is whatever it was when the callback
@@ -1072,6 +1161,52 @@ export function App() {
       ) => void)
     | null
   >(null);
+
+  /** L4 — Persist whatever's buffered in `recordingRef` and clear it.
+   *  Used both by the loop's clean-done branch AND by the Record toggle
+   *  when the user disarms mid-loop: the buffered actions are real work
+   *  the user did (or the agent did on their behalf), and silently
+   *  discarding them on a toggle-off was the bug. `capped` controls the
+   *  "skip save when the run aborted" guard the same way the on-done
+   *  branch did before the extraction. */
+  const finalizeRecording = useCallback((capped: boolean): void => {
+    const rec = recordingRef.current;
+    if (rec?.active && !capped && rec.actions.length > 0) {
+      const estimatedCostUsd = costForTurns(rec.usages);
+      const activeId = settingsRef.current?.activeProviderId ?? 'anthropic';
+      const savedModelId =
+        settingsRef.current?.modelByProvider[activeId] ??
+        DEFAULT_MODEL_BY_PROVIDER[activeId] ??
+        '(unknown)';
+      void window.optix.routines
+        .save({
+          originalPrompt: rec.originalPrompt,
+          actions: rec.actions,
+          providerId: activeId,
+          modelId: savedModelId,
+          turnCount: rec.turnCount,
+          estimatedCostUsd,
+          imageWidth: rec.imageWidth,
+          imageHeight: rec.imageHeight,
+        })
+        .then((saved) => {
+          if (!saved) {
+            console.warn(
+              '[optix-routines] save returned null — see main process logs',
+            );
+          }
+        })
+        .catch((err) => {
+          console.warn('[optix-routines] save failed:', err);
+        });
+    } else if (rec?.active) {
+      console.log(
+        '[optix-routines] recording NOT saved:',
+        `actions=${rec.actions.length} capped=${capped}`,
+      );
+    }
+    recordingRef.current = null;
+  }, []);
 
   /** Drive the Computer Use loop: execute each tool_use, capture a fresh
    *  screenshot, send results back, repeat until done or aborted. When
@@ -1137,7 +1272,17 @@ export function App() {
         liveLoopIdRef.current = null;
         return;
       }
+      // L2 — Abort check after the start/append IPC await. If the user
+      // hit Stop / clearChat while the IPC was in flight (clearChat
+      // sets `aborted = true` early — see L1), bail before we reset
+      // loopAbortRef and start driving a brand-new turn against a
+      // loop the user has just abandoned.
+      if (loopAbortRef.current?.aborted) return;
       loopAbortRef.current = { loopId: turn.loopId, aborted: false };
+      // L6 — Snapshot the provider that started this loop so a mid-task
+      // settings change can compare against it and fast-fail rather
+      // than mid-stream 401 once auth swaps under us.
+      loopStartProviderRef.current = settingsRef.current?.activeProviderId ?? null;
 
       const allItems: LoopItem[] = [];
       let curImageWidth = imageWidth;
@@ -1168,6 +1313,15 @@ export function App() {
               isFinal: true,
             });
           }
+          // P4 — Pass `allItems` through directly instead of spreading
+          // it (`items: [...allItems]`). The outer `setStatus({...})`
+          // call still hands React a fresh status object so a re-render
+          // fires; we just skip the per-action array allocation. The
+          // ref stays the same across the whole loop's lifetime, but
+          // the contents are mutated in place above — that's the
+          // trade-off, captured here to avoid future "why isn't this
+          // immutable?" confusion. (Same pattern used everywhere else
+          // we used to write `items: [...allItems]` in this loop.)
           setStatus({
             kind: 'loop-done',
             items: allItems,
@@ -1175,6 +1329,7 @@ export function App() {
             capped: turn.capped,
           });
           loopAbortRef.current = { loopId: null, aborted: false };
+          loopStartProviderRef.current = null;
           loopPauseRef.current = { paused: false, resolveResume: null };
           if (pendingResumeRef.current) {
             clearTimeout(pendingResumeRef.current);
@@ -1198,56 +1353,11 @@ export function App() {
             });
             liveLoopIdRef.current = null;
           }
-          // Flush a recording in progress, if any. We persist only on
-          // a clean done (not capped) and only when at least one
-          // action was captured — partial recordings would replay
-          // weirdly. Reset the recording ref + UI toggle either way.
-          const rec = recordingRef.current;
-          if (rec?.active && !turn.capped && rec.actions.length > 0) {
-            // Sum API cost across all recorded turns using the same
-            // helper the audit log uses, so the routine list cost
-            // matches what Access Logs would have shown for the
-            // same run.
-            const estimatedCostUsd = costForTurns(rec.usages);
-            // Same DEFAULT_MODEL_BY_PROVIDER fallback as the per-turn
-            // usage recording above — keeps the saved routine's model
-            // pointer in sync with what actually ran.
-            const activeId =
-              settingsRef.current?.activeProviderId ?? 'anthropic';
-            const savedModelId =
-              settingsRef.current?.modelByProvider[activeId] ??
-              DEFAULT_MODEL_BY_PROVIDER[activeId] ??
-              '(unknown)';
-            void window.optix.routines
-              .save({
-                originalPrompt: rec.originalPrompt,
-                actions: rec.actions,
-                providerId: activeId,
-                modelId: savedModelId,
-                turnCount: rec.turnCount,
-                estimatedCostUsd,
-                imageWidth: rec.imageWidth,
-                imageHeight: rec.imageHeight,
-              })
-              .then((saved) => {
-                if (!saved) {
-                  console.warn(
-                    '[optix-routines] save returned null — see main process logs',
-                  );
-                }
-              })
-              .catch((err) => {
-                // Surface to DevTools so a silent failure (Zod parse
-                // mismatch, fs write error) is at least visible.
-                console.warn('[optix-routines] save failed:', err);
-              });
-          } else if (rec?.active) {
-            console.log(
-              '[optix-routines] recording NOT saved:',
-              `actions=${rec.actions.length} capped=${turn.capped}`,
-            );
-          }
-          recordingRef.current = null;
+          // Flush a recording in progress, if any. The helper handles
+          // the persist + reset; the UI toggle reset stays here so a
+          // mid-loop disarm (which calls finalizeRecording directly)
+          // doesn't clobber the user's freshly-set toggle state.
+          finalizeRecording(turn.capped);
           setIsRecording(false);
           return;
         }
@@ -1302,7 +1412,7 @@ export function App() {
         setStatus({
           kind: 'looping',
           loopId: turn.loopId,
-          items: [...allItems],
+          items: allItems,
           turnIndex: turn.turnIndex,
           imageWidth: curImageWidth,
           imageHeight: curImageHeight,
@@ -1401,7 +1511,7 @@ export function App() {
             setStatus({
               kind: 'looping',
               loopId: turn.loopId,
-              items: [...allItems],
+              items: allItems,
               turnIndex: turn.turnIndex,
               imageWidth: curImageWidth,
               imageHeight: curImageHeight,
@@ -1433,7 +1543,7 @@ export function App() {
               setStatus({
                 kind: 'looping',
                 loopId: turn.loopId,
-                items: [...allItems],
+                items: allItems,
                 turnIndex: turn.turnIndex,
                 imageWidth: curImageWidth,
                 imageHeight: curImageHeight,
@@ -1493,7 +1603,7 @@ export function App() {
             setStatus({
               kind: 'looping',
               loopId: turn.loopId,
-              items: [...allItems],
+              items: allItems,
               turnIndex: turn.turnIndex,
               imageWidth: curImageWidth,
               imageHeight: curImageHeight,
@@ -1520,7 +1630,7 @@ export function App() {
             setStatus({
               kind: 'looping',
               loopId: turn.loopId,
-              items: [...allItems],
+              items: allItems,
               turnIndex: turn.turnIndex,
               imageWidth: curImageWidth,
               imageHeight: curImageHeight,
@@ -1537,7 +1647,7 @@ export function App() {
             setStatus({
               kind: 'looping',
               loopId: turn.loopId,
-              items: [...allItems],
+              items: allItems,
               turnIndex: turn.turnIndex,
               imageWidth: curImageWidth,
               imageHeight: curImageHeight,
@@ -1565,7 +1675,7 @@ export function App() {
             setStatus({
               kind: 'looping',
               loopId: turn.loopId,
-              items: [...allItems],
+              items: allItems,
               turnIndex: turn.turnIndex,
               imageWidth: curImageWidth,
               imageHeight: curImageHeight,
@@ -1680,7 +1790,7 @@ export function App() {
           setStatus({
             kind: 'looping',
             loopId: turn.loopId,
-            items: [...allItems],
+            items: allItems,
             turnIndex: turn.turnIndex,
             imageWidth: curImageWidth,
             imageHeight: curImageHeight,
@@ -1838,12 +1948,20 @@ export function App() {
             extraUserText,
             authToken: continueAuthToken,
           });
+          // L2 — Abort check immediately after the continue IPC await.
+          // The choice/plan/approval resolvers can fire from clearChat
+          // or stop() while this IPC is in flight; without this return
+          // we'd touch the freshly returned turn and step into the
+          // next loop iteration even though the user has torn the
+          // loop down.
+          if (loopAbortRef.current?.aborted) return;
         } catch (err) {
           setStatus({
             kind: 'error',
             message: err instanceof Error ? err.message : String(err),
           });
           loopAbortRef.current = { loopId: null, aborted: false };
+          loopStartProviderRef.current = null;
           loopPauseRef.current = { paused: false, resolveResume: null };
           if (pendingResumeRef.current) {
             clearTimeout(pendingResumeRef.current);
@@ -2274,11 +2392,30 @@ export function App() {
   }, []);
 
   const stop = useCallback(async () => {
+    // L1 — Set the abort flag BEFORE resolving any pending gate
+    // promises so the resolver wakes into a state where the post-IPC
+    // abort checks bail the loop. Cover all three gate refs: a
+    // mid-stream Stop that ignored the choice / plan refs would let
+    // those resolvers continue the loop after we tore down state.
+    if (loopAbortRef.current.loopId) {
+      loopAbortRef.current.aborted = true;
+    }
     // If the loop is paused on a per-action approval, resolve the pending
     // promise with 'abort' so runLoop can short-circuit cleanly.
     if (pendingApprovalRef.current) {
       pendingApprovalRef.current({ kind: 'abort' });
       return;
+    }
+    // Same idea for choice / plan gates — these resolver shapes don't
+    // model 'abort' as a kind, but the abort flag we set above will
+    // cause the L2 post-IPC checks to return before the next turn runs.
+    if (pendingChoiceRef.current) {
+      pendingChoiceRef.current('');
+      pendingChoiceRef.current = null;
+    }
+    if (pendingPlanDecisionRef.current) {
+      pendingPlanDecisionRef.current({ kind: 'deny' });
+      pendingPlanDecisionRef.current = null;
     }
     // Cancel a pending resume timer so it can't unpark the loop after
     // we've already aborted (the race window is the resume delay).
@@ -2323,8 +2460,20 @@ export function App() {
   // user manages that explicitly from the plan view's Clear button,
   // and many "new chat" flows are still working off the same plan.
   const clearChat = useCallback(async () => {
-    // Cancel any pending per-action approval / plan decision so
-    // runLoop can wake and bail out cleanly.
+    // L1 — Set the abort flag BEFORE resolving any pending gate
+    // promises. Invariant: any resolver we wake here must see
+    // `aborted = true` so the post-resolve abort checks (added by L2
+    // after every continue/appendUserMessage IPC await) short-circuit
+    // the loop instead of letting it press on with a stale decision.
+    // For `pendingApprovalRef` we inject an explicit abort decision
+    // (the runLoop has a dedicated branch for it). For the choice and
+    // plan refs the resolver shapes don't include 'abort' as a
+    // first-class kind — we resolve with a minimal value (empty
+    // string / deny) and rely on the abort flag to bail at the next
+    // IPC boundary instead of plowing ahead with the new turn.
+    if (loopAbortRef.current.loopId) {
+      loopAbortRef.current.aborted = true;
+    }
     pendingApprovalRef.current?.({ kind: 'abort' });
     pendingApprovalRef.current = null;
     pendingChoiceRef.current?.('');
@@ -2360,11 +2509,16 @@ export function App() {
       }
     }
 
-    // Tear down any paused conversation-mode loop sitting in main.
+    // L7 — Tear down any paused conversation-mode loop sitting in main.
+    // Awaited (not `void`-fired) so the next submit can't race the
+    // teardown — without the await, a quick clear → submit sequence
+    // would briefly run two loops in parallel, both of which think
+    // they own the conversation. clearChat is already async; callers
+    // already use `void clearChat()` from `void` contexts.
     if (liveLoopIdRef.current) {
       const stale = liveLoopIdRef.current;
       liveLoopIdRef.current = null;
-      void window.optix.computer.end(stale, 'abandoned').catch(() => {
+      await window.optix.computer.end(stale, 'abandoned').catch(() => {
         /* ignore */
       });
     }
@@ -2574,6 +2728,322 @@ export function App() {
   }, [pastTurns.length, activeTurnPrompt, status.kind]);
 
 
+  const providerLabel = settings ? PROVIDER_LABELS[settings.activeProviderId] : '…';
+  // Optix Cloud abstracts model choice — always Opus 4.7 under the hood —
+  // so we drop the model suffix from the header. BYO-key providers
+  // surface the chosen model so the user can see what they're paying for.
+  const modelLabel = !settings
+    ? '…'
+    : settings.activeProviderId === 'optixCloud'
+      ? undefined
+      : settings.modelByProvider[settings.activeProviderId] ??
+        DEFAULT_MODEL_BY_PROVIDER[settings.activeProviderId] ??
+        '(no model)';
+
+  // P2 — Memoise the WidgetHeader subtree so streaming token chunks
+  // (which only re-render the active response card) don't churn the
+  // header. The deps cover everything Header reads — providerLabel
+  // and modelLabel are derived above and stable across stream
+  // updates; isCompact + toggleCompact are stable refs. setShow*
+  // setters are stable from useState so they're safe to omit.
+  const headerNode = useMemo(
+    () => (
+      <WidgetHeader
+        providerLabel={providerLabel}
+        modelLabel={modelLabel}
+        onDocs={() => setShowDocs(true)}
+        onSettings={() => setShowSettings(true)}
+        onHide={() => window.optix.widget.hide()}
+        onToggleCompact={toggleCompact}
+        isCompact={isCompact}
+      />
+    ),
+    [providerLabel, modelLabel, isCompact, toggleCompact],
+  );
+
+  // P2 — Memoise the controls row (mode switch + action icons). None
+  // of its inputs depend on streamBuffer, so it stays cached across
+  // streaming chunk renders. Deps are the union of every state read
+  // inside the block; over-including is intentional (the alternative
+  // is staleness bugs that surface as the wrong button being enabled).
+  const controlsNode = useMemo(
+    () => (
+      <div className="widget__controls">
+        <ModeSwitch mode={mode} onChange={setMode} disabled={isBusy} />
+        {/* Action-icon cluster on the right side of the controls row.
+            Wrapping in its own flex container with a tight 4px gap
+            means the icons sit next to each other (parent's
+            space-between handles the big gap from the mode switch). */}
+        <div className="widget__controls-actions">
+          {/* Automate-mode Record toggle. Arms the NEXT run for
+              capture; the loop's done path saves the automation and
+              resets the toggle. The list of saved automations lives
+              in the Settings header, alongside Access Logs / Ask
+              Logs, so all run history is in one place. */}
+          {mode === 'automate' && (
+            <button
+              type="button"
+              className={`btn btn--icon${isRecording ? ' btn--icon-recording' : ''}`}
+              onClick={() => {
+                // L4 — When disarming mid-loop with buffered actions,
+                // finalize + save NOW instead of just flipping the flag.
+                // The on-done branch only saves when `rec.active` is
+                // true, so a flip-only toggle would silently throw
+                // away every action the agent had completed up to
+                // this point.
+                setIsRecording((prev) => {
+                  const next = !prev;
+                  if (
+                    prev &&
+                    !next &&
+                    recordingRef.current?.active &&
+                    recordingRef.current.actions.length > 0
+                  ) {
+                    finalizeRecording(false);
+                  } else if (prev && !next) {
+                    // No actions buffered yet — drop the ref cleanly so a
+                    // later loop start doesn't see stale state.
+                    recordingRef.current = null;
+                  }
+                  return next;
+                });
+              }}
+              // L4 — Enabled during 'looping' so the user can disarm
+              // mid-task; other busy states (capturing / thinking /
+              // awaiting-approval) still block the toggle since
+              // there's no buffered work to either save or discard.
+              disabled={isBusy && status.kind !== 'looping'}
+              title={
+                isRecording
+                  ? 'Recording armed — your next run will be saved as an automation'
+                  : 'Record the next run as a reusable automation'
+              }
+              aria-label={isRecording ? 'Cancel recording' : 'Arm recording'}
+            >
+              <RecordIcon />
+            </button>
+          )}
+          {/* Plan button — shown in Access AND Automate (both use the
+              Computer Use loop and benefit from plans). Always
+              rendered for layout stability; disabled until a plan
+              has been saved. Click opens the plan view. */}
+          {(mode === 'action' || mode === 'automate') && (
+            <button
+              type="button"
+              className={`btn btn--icon${savedPlan ? ' btn--icon-active' : ''}`}
+              onClick={() => setShowPlanView(true)}
+              disabled={!savedPlan}
+              title={
+                savedPlan
+                  ? 'View the active plan'
+                  : 'No plan yet — the agent will create one when needed'
+              }
+              aria-label="View the active plan"
+            >
+              <PlanListIcon />
+            </button>
+          )}
+          {/* Workspace folder picker — shown in Access AND Automate
+              (the Computer Use loop and shell tool both honour scope
+              regardless of which tab is driving). */}
+          {settings && (mode === 'action' || mode === 'automate') && (
+            <WorkspaceFolderControl settings={settings} />
+          )}
+          {/* Overlay toggle — always rendered when overlay is enabled
+              in settings, but disabled until a response with target
+              regions arrives. Keeping the button visible (just dim)
+              means its position doesn't shift when an answer lands. */}
+          {settings?.overlayEnabled && (
+            <button
+              type="button"
+              className={`btn btn--icon${overlayShowing ? ' btn--icon-active' : ''}`}
+              onClick={toggleOverlay}
+              disabled={!overlaySource}
+              title={
+                !overlaySource
+                  ? 'Highlight the answer on screen — available once the agent locates an element'
+                  : overlayShowing
+                    ? 'Hide on-screen highlight'
+                    : 'Show on-screen highlight'
+              }
+              aria-label={overlayShowing ? 'Hide on-screen highlight' : 'Show on-screen highlight'}
+            >
+              <SearchIcon />
+            </button>
+          )}
+          {/* Clear chat — abort any in-flight work and start fresh.
+              Disabled when there's nothing to clear (idle + empty
+              thread + empty prompt + no attachments) so the row's
+              affordances reflect available actions. The saved plan
+              is left intact; users manage that from the plan view. */}
+          <button
+            type="button"
+            className="btn btn--icon"
+            onClick={() => void clearChat()}
+            disabled={
+              status.kind === 'idle' &&
+              pastTurns.length === 0 &&
+              activeTurnPrompt === null &&
+              !prompt.trim() &&
+              attachments.length === 0
+            }
+            title="Clear the chat and start fresh"
+            aria-label="Clear chat"
+          >
+            <NewChatIcon />
+          </button>
+        </div>
+      </div>
+    ),
+    [
+      mode,
+      isBusy,
+      isRecording,
+      status.kind,
+      savedPlan,
+      settings,
+      overlayShowing,
+      overlaySource,
+      toggleOverlay,
+      pastTurns.length,
+      activeTurnPrompt,
+      prompt,
+      attachments,
+      clearChat,
+      finalizeRecording,
+    ],
+  );
+
+  // P2 — Memoise the prompt-wrap subtree (slash menu + attachment
+  // tray + PromptInput). None of these depend on streamBuffer, so
+  // the memo turns every streaming chunk re-render into a no-op for
+  // this entire subtree. Deps over-include rather than miss: better
+  // to invalidate occasionally than to ship a stale prompt UI.
+  const promptWrapNode = useMemo(
+    () => (
+      <div
+        className={`widget__prompt-wrap${attachments.length > 0 ? ' widget__prompt-wrap--has-attachments' : ''}`}
+      >
+        {(() => {
+          // Slash menu opens whenever the prompt has an active
+          // `/word` token at the cursor in any agent-loop mode
+          // (Access OR Automate). Recording stays exclusive to
+          // Automate, but referencing saved automations via
+          // `/OA-{n}` is useful in both — composing routines into
+          // ad-hoc Access prompts is one of the main reasons to
+          // record them.
+          if (mode !== 'action' && mode !== 'automate') return null;
+          const slash = findActiveSlashToken(prompt, promptCursor);
+          if (!slash) return null;
+          const q = slash.query.toLowerCase();
+          const filtered = q
+            ? routineSummaries.filter(
+                (s) =>
+                  s.name.toLowerCase().includes(q) ||
+                  s.originalPrompt.toLowerCase().includes(q),
+              )
+            : routineSummaries;
+          return (
+            <SlashMenu
+              items={filtered}
+              selectedIndex={slashSelectedIndex}
+              onIndexChange={setSlashSelectedIndex}
+              onPick={(s) => pickRoutineFromSlash(s, slash)}
+              loading={routinesLoading}
+              totalCount={routineSummaries.length}
+              query={slash.query}
+            />
+          );
+        })()}
+        <AttachmentTray attachments={attachments} onRemove={removeAttachment} />
+        {/* Prompt input is enabled during `looping` so the user can type a
+            mid-loop interrupt; submit() routes it into the queue. All other
+            busy states keep the input disabled. */}
+        <PromptInput
+          ref={promptInputRef}
+          value={prompt}
+          onChange={(v) => {
+            setPrompt(v);
+            // Resetting the highlight on every edit keeps stale
+            // indices from carrying past a filter shrink. The menu
+            // also clamps internally, but resetting feels snappier.
+            setSlashSelectedIndex(0);
+          }}
+          onSubmit={submit}
+          onCursorChange={setPromptCursor}
+          disabled={isBusy && status.kind !== 'looping'}
+          placeholder={
+            // Per-mode hint so the placeholder matches the current
+            // tab's behaviour. Type `/` in Access or Automate to
+            // open the routine picker.
+            mode === 'guide'
+              ? "Ask about what's on your screen… e.g. 'How do I create an invoice here?'"
+              : mode === 'action'
+                ? "Tell the agent what to do… e.g. 'Open my desktop and create a folder called notes' — type / to invoke a saved automation"
+                : "Record a new automation or invoke one with /OA-N… e.g. 'Open Firefox and check my unread emails'"
+          }
+          onIntercept={(e) => {
+            // Only consume keys when the slash menu is actually open.
+            // Slash menu is available in BOTH agent-loop modes.
+            if (mode !== 'action' && mode !== 'automate') return false;
+            const slash = findActiveSlashToken(prompt, promptCursor);
+            if (!slash) return false;
+            const q = slash.query.toLowerCase();
+            const filtered = q
+              ? routineSummaries.filter(
+                  (s) =>
+                    s.name.toLowerCase().includes(q) ||
+                    s.originalPrompt.toLowerCase().includes(q),
+                )
+              : routineSummaries;
+            if (e.key === 'ArrowDown') {
+              setSlashSelectedIndex((i) =>
+                Math.min(i + 1, Math.max(0, filtered.length - 1)),
+              );
+              return true;
+            }
+            if (e.key === 'ArrowUp') {
+              setSlashSelectedIndex((i) => Math.max(i - 1, 0));
+              return true;
+            }
+            if (e.key === 'Enter' && !e.shiftKey) {
+              const picked = filtered[slashSelectedIndex];
+              if (picked) {
+                pickRoutineFromSlash(picked, slash);
+              }
+              return true;
+            }
+            if (e.key === 'Escape') {
+              // Close the menu without nuking the user's whole
+              // sentence — just remove the active /query token.
+              promptInputRef.current?.replaceRange(slash.start, slash.end, '');
+              return true;
+            }
+            return false;
+          }}
+        />
+      </div>
+    ),
+    [
+      attachments,
+      mode,
+      prompt,
+      promptCursor,
+      routineSummaries,
+      routinesLoading,
+      slashSelectedIndex,
+      isBusy,
+      status.kind,
+      submit,
+      removeAttachment,
+      pickRoutineFromSlash,
+    ],
+  );
+
+  // Early returns sit BELOW the useMemo blocks (Rules of Hooks: hooks
+  // must run in the same order on every render). The memoised nodes
+  // are cheap to compute when they aren't going to be rendered;
+  // moving them above this guard avoids the conditional-hook hazard.
   if (!settings) {
     return (
       <div className="widget">
@@ -2623,128 +3093,11 @@ export function App() {
     );
   }
 
-  const providerLabel = PROVIDER_LABELS[settings.activeProviderId];
-  // Optix Cloud abstracts model choice — always Opus 4.7 under the hood —
-  // so we drop the model suffix from the header. BYO-key providers
-  // surface the chosen model so the user can see what they're paying for.
-  const modelLabel =
-    settings.activeProviderId === 'optixCloud'
-      ? undefined
-      : settings.modelByProvider[settings.activeProviderId] ??
-        DEFAULT_MODEL_BY_PROVIDER[settings.activeProviderId] ??
-        '(no model)';
-
   return (
     <div className={`widget${isCompact ? ' widget--compact' : ''}`}>
-      <WidgetHeader
-        providerLabel={providerLabel}
-        modelLabel={modelLabel}
-        onDocs={() => setShowDocs(true)}
-        onSettings={() => setShowSettings(true)}
-        onHide={() => window.optix.widget.hide()}
-        onToggleCompact={toggleCompact}
-        isCompact={isCompact}
-      />
+      {headerNode}
 
-      <div className="widget__controls">
-        <ModeSwitch mode={mode} onChange={setMode} disabled={isBusy} />
-        {/* Action-icon cluster on the right side of the controls row.
-            Wrapping in its own flex container with a tight 4px gap
-            means the icons sit next to each other (parent's
-            space-between handles the big gap from the mode switch). */}
-        <div className="widget__controls-actions">
-          {/* Automate-mode Record toggle. Arms the NEXT run for
-              capture; the loop's done path saves the automation and
-              resets the toggle. The list of saved automations lives
-              in the Settings header, alongside Access Logs / Ask
-              Logs, so all run history is in one place. */}
-          {mode === 'automate' && (
-            <button
-              type="button"
-              className={`btn btn--icon${isRecording ? ' btn--icon-recording' : ''}`}
-              onClick={() => setIsRecording((v) => !v)}
-              disabled={isBusy}
-              title={
-                isRecording
-                  ? 'Recording armed — your next run will be saved as an automation'
-                  : 'Record the next run as a reusable automation'
-              }
-              aria-label={isRecording ? 'Cancel recording' : 'Arm recording'}
-            >
-              <RecordIcon />
-            </button>
-          )}
-          {/* Plan button — shown in Access AND Automate (both use the
-              Computer Use loop and benefit from plans). Always
-              rendered for layout stability; disabled until a plan
-              has been saved. Click opens the plan view. */}
-          {(mode === 'action' || mode === 'automate') && (
-            <button
-              type="button"
-              className={`btn btn--icon${savedPlan ? ' btn--icon-active' : ''}`}
-              onClick={() => setShowPlanView(true)}
-              disabled={!savedPlan}
-              title={
-                savedPlan
-                  ? 'View the active plan'
-                  : 'No plan yet — the agent will create one when needed'
-              }
-              aria-label="View the active plan"
-            >
-              <PlanListIcon />
-            </button>
-          )}
-          {/* Workspace folder picker — shown in Access AND Automate
-              (the Computer Use loop and shell tool both honour scope
-              regardless of which tab is driving). */}
-          {(mode === 'action' || mode === 'automate') && (
-            <WorkspaceFolderControl settings={settings} />
-          )}
-          {/* Overlay toggle — always rendered when overlay is enabled
-              in settings, but disabled until a response with target
-              regions arrives. Keeping the button visible (just dim)
-              means its position doesn't shift when an answer lands. */}
-          {settings.overlayEnabled && (
-            <button
-              type="button"
-              className={`btn btn--icon${overlayShowing ? ' btn--icon-active' : ''}`}
-              onClick={toggleOverlay}
-              disabled={!overlaySource}
-              title={
-                !overlaySource
-                  ? 'Highlight the answer on screen — available once the agent locates an element'
-                  : overlayShowing
-                    ? 'Hide on-screen highlight'
-                    : 'Show on-screen highlight'
-              }
-              aria-label={overlayShowing ? 'Hide on-screen highlight' : 'Show on-screen highlight'}
-            >
-              <SearchIcon />
-            </button>
-          )}
-          {/* Clear chat — abort any in-flight work and start fresh.
-              Disabled when there's nothing to clear (idle + empty
-              thread + empty prompt + no attachments) so the row's
-              affordances reflect available actions. The saved plan
-              is left intact; users manage that from the plan view. */}
-          <button
-            type="button"
-            className="btn btn--icon"
-            onClick={() => void clearChat()}
-            disabled={
-              status.kind === 'idle' &&
-              pastTurns.length === 0 &&
-              activeTurnPrompt === null &&
-              !prompt.trim() &&
-              attachments.length === 0
-            }
-            title="Clear the chat and start fresh"
-            aria-label="Clear chat"
-          >
-            <NewChatIcon />
-          </button>
-        </div>
-      </div>
+      {controlsNode}
 
       <div
         className={`widget__body${showBodyFade ? ' widget__body--has-overflow' : ''}`}
@@ -2894,7 +3247,16 @@ export function App() {
                       stream finishes — only the inner content swaps. */}
                   {(status.kind === 'capturing' || status.kind === 'thinking') &&
                     streamingIntent && (
-                      <article className="response">
+                      // U2 — aria-live="polite" + aria-atomic="false" so
+                      // screen readers announce streaming chunks as they
+                      // arrive without re-reading the whole response on
+                      // each token. atomic=false lets the AT diff and
+                      // announce only the appended text.
+                      <article
+                        className="response"
+                        aria-live="polite"
+                        aria-atomic="false"
+                      >
                         <header className="response__header">
                           <span className="response__intent">{streamingIntent}</span>
                           {streamingConfidence !== null && (
@@ -2974,108 +3336,7 @@ export function App() {
           framed container so thumbnails sit inside the input visually,
           freeing up vertical space in the body above. Falls back to a
           plain textarea look when no attachments are staged. */}
-      <div
-        className={`widget__prompt-wrap${attachments.length > 0 ? ' widget__prompt-wrap--has-attachments' : ''}`}
-      >
-        {(() => {
-          // Slash menu opens whenever the prompt has an active
-          // `/word` token at the cursor in any agent-loop mode
-          // (Access OR Automate). Recording stays exclusive to
-          // Automate, but referencing saved automations via
-          // `/OA-{n}` is useful in both — composing routines into
-          // ad-hoc Access prompts is one of the main reasons to
-          // record them.
-          if (mode !== 'action' && mode !== 'automate') return null;
-          const slash = findActiveSlashToken(prompt, promptCursor);
-          if (!slash) return null;
-          const q = slash.query.toLowerCase();
-          const filtered = q
-            ? routineSummaries.filter(
-                (s) =>
-                  s.name.toLowerCase().includes(q) ||
-                  s.originalPrompt.toLowerCase().includes(q),
-              )
-            : routineSummaries;
-          return (
-            <SlashMenu
-              items={filtered}
-              selectedIndex={slashSelectedIndex}
-              onIndexChange={setSlashSelectedIndex}
-              onPick={(s) => pickRoutineFromSlash(s, slash)}
-              loading={routinesLoading}
-              totalCount={routineSummaries.length}
-              query={slash.query}
-            />
-          );
-        })()}
-        <AttachmentTray attachments={attachments} onRemove={removeAttachment} />
-        {/* Prompt input is enabled during `looping` so the user can type a
-            mid-loop interrupt; submit() routes it into the queue. All other
-            busy states keep the input disabled. */}
-        <PromptInput
-          ref={promptInputRef}
-          value={prompt}
-          onChange={(v) => {
-            setPrompt(v);
-            // Resetting the highlight on every edit keeps stale
-            // indices from carrying past a filter shrink. The menu
-            // also clamps internally, but resetting feels snappier.
-            setSlashSelectedIndex(0);
-          }}
-          onSubmit={submit}
-          onCursorChange={setPromptCursor}
-          disabled={isBusy && status.kind !== 'looping'}
-          placeholder={
-            // Per-mode hint so the placeholder matches the current
-            // tab's behaviour. Type `/` in Access or Automate to
-            // open the routine picker.
-            mode === 'guide'
-              ? "Ask about what's on your screen… e.g. 'How do I create an invoice here?'"
-              : mode === 'action'
-                ? "Tell the agent what to do… e.g. 'Open my desktop and create a folder called notes' — type / to invoke a saved automation"
-                : "Record a new automation or invoke one with /OA-N… e.g. 'Open Firefox and check my unread emails'"
-          }
-          onIntercept={(e) => {
-            // Only consume keys when the slash menu is actually open.
-            // Slash menu is available in BOTH agent-loop modes.
-            if (mode !== 'action' && mode !== 'automate') return false;
-            const slash = findActiveSlashToken(prompt, promptCursor);
-            if (!slash) return false;
-            const q = slash.query.toLowerCase();
-            const filtered = q
-              ? routineSummaries.filter(
-                  (s) =>
-                    s.name.toLowerCase().includes(q) ||
-                    s.originalPrompt.toLowerCase().includes(q),
-                )
-              : routineSummaries;
-            if (e.key === 'ArrowDown') {
-              setSlashSelectedIndex((i) =>
-                Math.min(i + 1, Math.max(0, filtered.length - 1)),
-              );
-              return true;
-            }
-            if (e.key === 'ArrowUp') {
-              setSlashSelectedIndex((i) => Math.max(i - 1, 0));
-              return true;
-            }
-            if (e.key === 'Enter' && !e.shiftKey) {
-              const picked = filtered[slashSelectedIndex];
-              if (picked) {
-                pickRoutineFromSlash(picked, slash);
-              }
-              return true;
-            }
-            if (e.key === 'Escape') {
-              // Close the menu without nuking the user's whole
-              // sentence — just remove the active /query token.
-              promptInputRef.current?.replaceRange(slash.start, slash.end, '');
-              return true;
-            }
-            return false;
-          }}
-        />
-      </div>
+      {promptWrapNode}
 
       <div className="widget__actions">
         <button

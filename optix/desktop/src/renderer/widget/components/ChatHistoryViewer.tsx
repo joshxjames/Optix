@@ -123,7 +123,7 @@ export function ChatHistoryViewer({ onClose }: Props) {
 
   async function deleteConv(id: string): Promise<void> {
     // Single confirm — chat history is meant to be expendable.
-    if (!confirm('Delete this conversation? This cannot be undone.')) return;
+    if (!window.confirm('Delete this conversation and all its attachments?')) return;
     await window.optix.chatHistory.delete(id);
     // Navigate back to the list (refreshing it) — the conversation
     // they were viewing no longer exists, so the detail view is stale.
@@ -141,10 +141,25 @@ export function ChatHistoryViewer({ onClose }: Props) {
     }
   };
 
+  // Modal hygiene: Escape mirrors the back arrow.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') goBack();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, onClose]);
+
   return (
     <div className="audit chat-history">
       <header className="audit__header">
-        <button type="button" className="btn btn--small" onClick={goBack}>
+        <button
+          type="button"
+          className="btn btn--small"
+          onClick={goBack}
+          autoFocus
+        >
           ← Back
         </button>
         <span className="audit__title">

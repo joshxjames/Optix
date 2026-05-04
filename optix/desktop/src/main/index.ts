@@ -16,6 +16,7 @@ process.on('uncaughtException', (err) => {
   throw err;
 });
 import { getPrimarySource, invalidateSourceIdCache } from '@main/capture/screen';
+import { getWorker as getOcrWorker } from '@main/capture/ocr';
 import { registerProviderIpc } from '@main/ipc/provider.ipc';
 import { registerSettingsIpc } from '@main/ipc/settings.ipc';
 import { registerHistoryIpc } from '@main/ipc/history.ipc';
@@ -118,6 +119,13 @@ app.whenReady().then(() => {
   void getPrimarySource().catch((err) => {
     console.warn('[optix] source-id pre-warm failed:', err);
   });
+
+  // Pre-warm the tesseract.js OCR worker. Cold init is ~2–3s (WASM bring-up
+  // + ~10MB language data fetch). Firing it here means the user's first
+  // overlay-snapping prompt skips that cost. Errors are swallowed — if the
+  // pre-warm fails the cache resets itself (see ocr.ts), so the on-demand
+  // path will retry the load when a prompt actually needs OCR.
+  void getOcrWorker().catch(() => {});
 
   // Displays can be reconfigured mid-session (monitor plugged/unplugged).
   // Invalidate the cached source ID so the next capture re-enumerates fresh.

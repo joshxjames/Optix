@@ -673,7 +673,10 @@ export const SettingsSchema = z.object({
    * checks the estimated cost after each turn and stops if it exceeds this
    * value. `null` (default) means no cap.
    */
-  agentCostCeilingUsd: z.number().nonnegative().nullable().default(null),
+  // 0/negative coerces to null because "no effective cap" should be
+  // expressed as null, not 0 — `cost <= 0` would otherwise short-circuit
+  // the loop's ceiling check on the very first turn.
+  agentCostCeilingUsd: z.number().nonnegative().nullable().default(null).transform((v) => (typeof v === 'number' && v < 0.01 ? null : v)),
   /**
    * Optional workspace-folder path. When set, file-system actions targeting
    * paths inside this folder follow the regular approval mode; actions

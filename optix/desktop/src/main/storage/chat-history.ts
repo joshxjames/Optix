@@ -1,5 +1,5 @@
 import { app } from 'electron';
-import { mkdir, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { ConversationSchema } from '@shared/schemas';
@@ -38,11 +38,10 @@ async function persist(conv: Conversation): Promise<void> {
   try {
     const dir = getConversationDir(conv.id);
     await mkdir(dir, { recursive: true });
-    await writeFile(
-      path.join(dir, 'conversation.json'),
-      JSON.stringify(conv, null, 2),
-      'utf8',
-    );
+    const target = path.join(dir, 'conversation.json');
+    const tmp = `${target}.tmp`;
+    await writeFile(tmp, JSON.stringify(conv, null, 2), 'utf8');
+    await rename(tmp, target);
   } catch (err) {
     console.warn(
       '[optix-chat-history] persist failed:',
@@ -84,7 +83,9 @@ async function persistAttachment(
   const rel = path.posix.join('images', `${stem}${ext}`);
   const abs = path.join(getConversationDir(convId), rel);
   await mkdir(path.dirname(abs), { recursive: true });
-  await writeFile(abs, bytes);
+  const tmp = `${abs}.tmp`;
+  await writeFile(tmp, bytes);
+  await rename(tmp, abs);
   return {
     path: rel,
     mimeType,
@@ -138,6 +139,11 @@ export async function appendTurn(input: AppendTurnInput): Promise<ConversationTu
   const startedAt = new Date().toISOString();
 
   // Persist binary attachments + capture under the conversation's image dir.
+  // We only ever cache the persisted-attachment metadata (path + mime +
+  // byteLength) on the in-memory conversation — raw `bytes` from
+  // `input.attachments` go straight to disk and stay function-local so
+  // long-running conversations don't accumulate image RAM. The renderer
+  // re-reads attachment bytes on demand via the `readAttachment` IPC.
   const persistedAttachments: ConversationAttachment[] = [];
   for (const att of input.attachments) {
     try {
@@ -162,7 +168,9 @@ export async function appendTurn(input: AppendTurnInput): Promise<ConversationTu
       const rel = path.posix.join('images', `capture-${randomUUID()}${ext}`);
       const abs = path.join(getConversationDir(input.convId), rel);
       await mkdir(path.dirname(abs), { recursive: true });
-      await writeFile(abs, input.capture.bytes);
+      const tmp = `${abs}.tmp`;
+      await writeFile(tmp, input.capture.bytes);
+      await rename(tmp, abs);
       capturePath = rel;
       captureMimeType = input.capture.mimeType;
       captureWidth = input.capture.width;

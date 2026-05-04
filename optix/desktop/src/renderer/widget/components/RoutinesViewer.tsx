@@ -127,7 +127,7 @@ export function RoutinesViewer({ onClose, onRun }: Props) {
   };
 
   const deleteRoutine = async (id: string): Promise<void> => {
-    if (!confirm('Delete this routine? This cannot be undone.')) return;
+    if (!window.confirm("Delete this routine? This can't be undone.")) return;
     await window.optix.routines.delete(id);
     setView({ kind: 'list' });
   };
@@ -173,17 +173,34 @@ export function RoutinesViewer({ onClose, onRun }: Props) {
 
   const goBack = (): void => {
     if (view.kind === 'detail') {
-      if (view.dirty && !confirm('Discard unsaved changes?')) return;
+      if (view.dirty && !window.confirm('Discard unsaved changes?')) return;
       setView({ kind: 'list' });
     } else {
       onClose();
     }
   };
 
+  // Modal hygiene: Escape mirrors the back arrow (and runs the same
+  // dirty-check, so the user can't accidentally Esc out of unsaved
+  // routine edits).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') goBack();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, onClose]);
+
   return (
     <div className="audit routines">
       <header className="audit__header">
-        <button type="button" className="btn btn--small" onClick={goBack}>
+        <button
+          type="button"
+          className="btn btn--small"
+          onClick={goBack}
+          autoFocus
+        >
           ← Back
         </button>
         <span className="audit__title">

@@ -121,7 +121,7 @@ export function AuditLogViewer({ onClose }: Props) {
   }
 
   async function deleteLog(filename: string): Promise<void> {
-    if (!confirm('Delete this audit log? This cannot be undone.')) return;
+    if (!window.confirm("Delete this audit log? This can't be undone.")) return;
     const ok = await window.optix.audit.delete(filename);
     if (!ok) {
       console.warn('[optix-audit] delete failed for', filename);
@@ -144,10 +144,26 @@ export function AuditLogViewer({ onClose }: Props) {
     }
   };
 
+  // Modal hygiene: Escape mirrors the back arrow (detail → list →
+  // close). Re-bound on view change so the captured `view` is current.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') goBack();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, onClose]);
+
   return (
     <div className="audit">
       <header className="audit__header">
-        <button type="button" className="btn btn--small" onClick={goBack}>
+        <button
+          type="button"
+          className="btn btn--small"
+          onClick={goBack}
+          autoFocus
+        >
           ← Back
         </button>
         <span className="audit__title">

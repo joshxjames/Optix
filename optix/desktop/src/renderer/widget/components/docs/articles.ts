@@ -847,7 +847,19 @@ export const DOC_ARTICLES: DocArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: "Optix stores everything under your OS user-data directory (Roaming\\@optix\\desktop on Windows). Inside:",
+        text: 'Optix stores everything under your OS user-data directory:',
+      },
+      {
+        kind: 'ul',
+        items: [
+          'Windows: %APPDATA%\\@optix\\desktop',
+          'macOS: ~/Library/Application Support/@optix/desktop',
+          'Linux: ~/.config/@optix/desktop',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Inside that directory:',
       },
       {
         kind: 'ul',

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   DOC_ARTICLES,
   DOC_CATEGORIES,
@@ -84,6 +84,18 @@ export function DocsViewer({ onClose }: Props) {
     if (view.kind === 'detail') setView({ kind: 'list' });
     else onClose();
   };
+
+  // Modal hygiene: Escape mirrors the back arrow. The list view's
+  // search input keeps autoFocus (more useful than the Back button on
+  // a docs index) — Escape covers the keyboard-dismiss path.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') goBack();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, onClose]);
 
   return (
     <div className="audit docs">

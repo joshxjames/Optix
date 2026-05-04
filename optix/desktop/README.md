@@ -61,11 +61,14 @@ See the [Optix-Cloud](https://github.com/joshxjames/Optix-Cloud) repo for the re
 - Screen capture is explicit-trigger only (no background streaming).
 - Privacy toggle in the widget disables capture entirely.
 
-## Phase 1 scope
+## Current features
 
-- Floating widget with prompt, capture, privacy, stop
-- Settings window (API key + model selection per provider)
-- "Explain" mode: capture screen → vision call → structured response
-- In-memory session history
-
-Phase 2 will add region capture, target-region highlighting, a custom-cursor overlay, TTS, and push-to-talk. Phase 3: mouse automation with approval gates.
+- Ask / Access / Automate modes (Q&A, Computer Use agent, recording + replay)
+- Plan tool with explicit approve / deny / feedback gate
+- Recording captures UIA-anchored actions; replay via `/OA-N` slash menu
+- Approval modes: per-task, per-action, never (out-of-workspace always gates)
+- Workspace folder + cost ceiling (USD) for agent runs
+- Screen-region overlay highlights for walkthrough answers
+- Audit logs (every Access run), chat history (Ask conversations), routines list
+- In-widget docs, light / dark theme, configurable global hotkey
+- Optix Cloud subscription provider — managed Claude access, no API key

@@ -426,11 +426,23 @@ html, body {
 
 .widget__error {
   padding: 8px 10px;
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.35);
-  color: #fecaca;
+  /* WCAG AA: prior #fecaca on rgba(239,68,68,0.15) was ~3.2:1. Bumped
+     foreground to pure white and the wash to 0.25 opacity so the
+     contrast clears 4.5:1 against the dark panel surface. */
+  background: rgba(239, 68, 68, 0.25);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  color: #ffffff;
   border-radius: var(--radius-sm);
   font-size: 12px;
+}
+/* Light theme: white on a translucent red wash over a near-white
+   surface composites grey and fails AA. Use the solid danger colour
+   for the background so #ffffff lands on a saturated red — clears
+   AA at ~4.8:1 against #ef4444. */
+:root[data-theme='light'] .widget__error {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #ffffff;
 }
 
 /* Optix Cloud billing-error inline card. Replaces the plain
@@ -473,8 +485,14 @@ html, body {
   border-color: var(--accent-hover);
 }
 .upgrade-prompt__error {
+  /* Pull the danger text onto a wash of the danger colour so the
+     darker var(--danger) hue clears WCAG AA against the parent
+     `.upgrade-prompt` accent-soft surface. */
+  padding: 4px 6px;
   font-size: 11px;
+  background: var(--danger-soft);
   color: var(--danger);
+  border-radius: var(--radius-sm);
 }
 
 .widget__loading {

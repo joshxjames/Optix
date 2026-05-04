@@ -13,13 +13,36 @@ import { normalize, scoreLabelMatch } from '@main/capture/snap-to-uia';
 // Lazy-load robotjs so a missing or broken native binding doesn't crash the
 // app at startup — only when an action is actually executed. The error then
 // surfaces as a clean ExecuteResult instead of an unhandled throw.
+//
+// We DON'T cache a rejected promise — if the dynamic import fails (DLL
+// missing, wrong arch after a Node-version bump, prebuilt binary mismatch),
+// holding the rejection forever would mean the user has no way to recover
+// without restarting the app. Clearing `robotPromise` on rejection lets a
+// subsequent action retry the load (e.g. after the user has run
+// `pnpm install` to rebuild native modules and the file is now present).
 type Robot = typeof import('@hurdlegroup/robotjs');
 let robotPromise: Promise<Robot> | null = null;
 async function getRobot(): Promise<Robot> {
   if (!robotPromise) {
     // Use dynamic import so electron-vite externalizes the native module at
-    // runtime rather than trying to bundle it.
-    robotPromise = import('@hurdlegroup/robotjs').then((m) => (m.default ?? m) as Robot);
+    // runtime rather than trying to bundle it. Wrap in an IIFE so we can
+    // null out the cache on failure before re-throwing.
+    robotPromise = (async () => {
+      try {
+        const m = await import('@hurdlegroup/robotjs');
+        return (m.default ?? m) as Robot;
+      } catch (err) {
+        // Drop the cached rejection so the next call retries the import.
+        robotPromise = null;
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[optix-action] robotjs load failed: ${msg}`);
+        throw new Error(
+          'robotjs native module failed to load. The agent can\'t simulate ' +
+            'clicks/typing. Reinstall with `pnpm install` to rebuild native ' +
+            'modules for your platform.',
+        );
+      }
+    })();
   }
   return robotPromise;
 }

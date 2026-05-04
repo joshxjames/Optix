@@ -1,6 +1,6 @@
 import { app } from 'electron';
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { AgentAction, PlanToolAction, ProviderId } from '@shared/schemas';
 import { describeComputerAction, describeLabelAction } from '@main/automation/executor';
@@ -97,14 +97,30 @@ function fileNameFor(log: AuditLog): string {
   return `${ts}-${log.loopId.slice(0, 8)}.json`;
 }
 
-/** Synchronous persist — used from `before-quit` where we cannot
- *  await the async fs/promises write. Best-effort; mirrors `persist`
- *  but with `writeFileSync`. */
+// Both persist paths use a tmp-write + rename so a crash mid-write can
+// never produce a half-flushed JSON. Rename is atomic on POSIX and on
+// Windows ReFS/NTFS, so the only states a reader can observe are "old
+// file" or "new file" — never a truncated one. Concurrent-write note:
+// if two writes for the SAME loop file race, the second `rename`
+// overwrites the first. That's fine — audit logs grow monotonically so
+// last-write-wins for the same loop is the desired behaviour.
+// Different loops write to different filenames so they cannot conflict.
+//
+// Orphaned `.tmp` files (left if the process died between writeFile and
+// rename) are implicitly ignored: `listAuditLogs` filters by `.json`
+// extension below, so `.tmp` orphans never appear in the UI and harm
+// nothing besides occupying a few KB until the directory is cleared.
+
+/** Synchronous persist — used from `before-quit` where the process is
+ *  about to exit and async writes wouldn't flush in time. Best-effort. */
 function persistSync(log: AuditLog): void {
   try {
     const dir = getAuditDir();
     mkdirSync(dir, { recursive: true });
-    writeFileSync(path.join(dir, fileNameFor(log)), JSON.stringify(log, null, 2), 'utf8');
+    const target = path.join(dir, fileNameFor(log));
+    const tmp = `${target}.tmp`;
+    writeFileSync(tmp, JSON.stringify(log, null, 2), 'utf8');
+    renameSync(tmp, target);
   } catch (err) {
     console.warn(
       '[optix-audit] sync persist failed:',
@@ -113,11 +129,18 @@ function persistSync(log: AuditLog): void {
   }
 }
 
+/** Async persist — used for every in-flight audit event (recordTurn,
+ *  recordAction, etc.). Async because the loop calls this on every
+ *  fast-path event and we don't want to block the main thread; sync
+ *  is reserved for the shutdown path above where we have no choice. */
 async function persist(log: AuditLog): Promise<void> {
   try {
     const dir = getAuditDir();
     await mkdir(dir, { recursive: true });
-    await writeFile(path.join(dir, fileNameFor(log)), JSON.stringify(log, null, 2), 'utf8');
+    const target = path.join(dir, fileNameFor(log));
+    const tmp = `${target}.tmp`;
+    await writeFile(tmp, JSON.stringify(log, null, 2), 'utf8');
+    await rename(tmp, target);
   } catch (err) {
     // Audit writes are best-effort — never throw into the loop.
     console.warn('[optix-audit] persist failed:', err instanceof Error ? err.message : err);
@@ -329,38 +352,49 @@ export async function listAuditLogs(): Promise<AuditLogSummary[]> {
   } catch {
     return [];
   }
+  // `.json` filter also implicitly skips any `.tmp` orphans left behind
+  // by a crash mid-rename in `persist` / `persistSync`.
   const jsons = files.filter((f) => f.endsWith('.json'));
-  const summaries = await Promise.all(
-    jsons.map(async (f): Promise<AuditLogSummary | null> => {
-      try {
-        const raw = await readFile(path.join(dir, f), 'utf8');
-        const log = JSON.parse(raw) as AuditLog;
-        // Backwards-compat for old audit JSON without `userMessages`.
-        const messageCount = Array.isArray(log.userMessages)
-          ? log.userMessages.length
-          : 1;
-        return {
-          filename: f,
-          loopId: log.loopId,
-          startedAt: log.startedAt,
-          endedAt: log.endedAt,
-          prompt: log.prompt,
-          outcome: log.outcome,
-          modelId: log.modelId,
-          providerId: log.providerId,
-          messageCount,
-          turnCount: log.turns.length,
-          actionCount: log.turns.reduce((n, t) => n + t.actions.length, 0),
-          estimatedCostUsd: log.estimatedCostUsd,
-        };
-      } catch {
-        return null;
-      }
+  // `Promise.allSettled` not `Promise.all`: a single corrupt or
+  // unreadable file shouldn't blank the whole list view. Rejected reads
+  // are logged so the user has a breadcrumb, but the list still
+  // renders the surviving entries.
+  const settled = await Promise.allSettled(
+    jsons.map(async (f): Promise<AuditLogSummary> => {
+      const raw = await readFile(path.join(dir, f), 'utf8');
+      const log = JSON.parse(raw) as AuditLog;
+      // Backwards-compat for old audit JSON without `userMessages`.
+      const messageCount = Array.isArray(log.userMessages)
+        ? log.userMessages.length
+        : 1;
+      return {
+        filename: f,
+        loopId: log.loopId,
+        startedAt: log.startedAt,
+        endedAt: log.endedAt,
+        prompt: log.prompt,
+        outcome: log.outcome,
+        modelId: log.modelId,
+        providerId: log.providerId,
+        messageCount,
+        turnCount: log.turns.length,
+        actionCount: log.turns.reduce((n, t) => n + t.actions.length, 0),
+        estimatedCostUsd: log.estimatedCostUsd,
+      };
     }),
   );
-  return summaries
-    .filter((s): s is AuditLogSummary => s !== null)
-    .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  const summaries: AuditLogSummary[] = [];
+  settled.forEach((r, i) => {
+    if (r.status === 'fulfilled') {
+      summaries.push(r.value);
+    } else {
+      console.warn(
+        `[optix-audit] skipping unreadable log ${jsons[i] ?? '?'}:`,
+        r.reason instanceof Error ? r.reason.message : r.reason,
+      );
+    }
+  });
+  return summaries.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }
 
 /** Delete a single audit log by filename. Same filename validation as
