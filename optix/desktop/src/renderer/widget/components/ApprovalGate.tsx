@@ -1,3 +1,6 @@
+import { useRef } from 'react';
+import { useFocusTrap } from '../hooks/useFocusTrap';
+
 type Props = {
   prompt: string;
   onApprove: () => void;
@@ -5,8 +8,19 @@ type Props = {
 };
 
 export function ApprovalGate({ prompt, onApprove, onCancel }: Props) {
+  // Trap Tab/Shift+Tab inside the gate so focus can't escape into the
+  // chat surface behind it while the user is deciding. Also stashes /
+  // restores the previously-focused element across mount.
+  const containerRef = useRef<HTMLElement>(null);
+  useFocusTrap(containerRef);
   return (
-    <article className="response approval">
+    <article
+      ref={containerRef}
+      className="response approval"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Permission required"
+    >
       <header className="response__header">
         <span className="response__intent">⚠ Permission required</span>
       </header>

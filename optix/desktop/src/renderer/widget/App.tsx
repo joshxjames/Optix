@@ -773,7 +773,17 @@ export function App() {
     const result = await window.optix.widget.pickImages();
     if (Array.isArray(result)) return; // cancelled
     if (result.errors.length > 0) {
-      setAttachError(result.errors.join(' \u2022 '));
+      // Errors are now structured `{ filename, reason }[]` (Round 6 — main no
+      // longer leaks raw OS error messages). Map reason codes to short copy.
+      const reasonCopy: Record<string, string> = {
+        read_failed: "couldn't be read",
+        too_large: 'is too large',
+        unsupported_type: 'is not a supported image type',
+      };
+      const summary = result.errors
+        .map((e) => `${e.filename} ${reasonCopy[e.reason] ?? 'failed'}`)
+        .join(' \u2022 ');
+      setAttachError(summary);
     }
     if (result.images.length === 0) return;
     const next: StagedAttachment[] = result.images.map((img) => ({

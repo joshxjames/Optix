@@ -1,8 +1,7 @@
 /*
- * NOTE: The source markdown truncated this file mid-rule at ".download-card p { margin: 0 0 0.7".
- * Everything below is faithful to what was in the md, with Unicode non-breaking hyphens (U+2011)
- * normalized to ASCII hyphens so the CSS actually parses. The last rule is left incomplete
- * as a marker that you'll need to finish `.download-card p` and any rules that came after it.
+ * Optix marketing site styles.
+ * Unicode non-breaking hyphens (U+2011) in the source markdown were
+ * normalized to ASCII hyphens so the CSS parses correctly.
  */
 
 :root {
@@ -247,8 +246,211 @@ nav a:hover {
   font-size: 1.125rem;
 }
 
-/* TRUNCATED in source markdown — original ended here mid-rule:
-   .download-card p { margin: 0 0 0.7
-   You'll need to complete this rule and add the remaining sections
-   (.privacy, footer, etc.) yourself.
-*/
+.download-card p {
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.download-card .link-text {
+  display: inline-block;
+  color: var(--primary);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.download-card:hover .link-text {
+  color: var(--primary-hover);
+}
+
+.notes {
+  margin-top: 2rem;
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius);
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.875rem;
+  text-align: center;
+  max-width: 48rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.notes strong {
+  color: var(--fg);
+}
+
+/* Privacy */
+.privacy {
+  padding: 5rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.privacy h2 {
+  font-size: 2rem;
+  margin: 0 0 1rem;
+  text-align: center;
+}
+
+.privacy > .container > p {
+  text-align: center;
+  margin: 0 0 2rem;
+  max-width: 36rem;
+  margin-left: auto;
+  margin-right: auto;
+  color: var(--muted);
+}
+
+.privacy-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--gap);
+}
+
+@media (min-width: 768px) {
+  .privacy-list {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.privacy-list li {
+  padding: 1.25rem 1.5rem;
+  border-radius: var(--radius);
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+.privacy-list strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* Footer */
+footer {
+  padding: 2.5rem 0;
+  border-top: 1px solid var(--border);
+  background: var(--card-bg);
+}
+
+footer .container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--gap);
+  flex-wrap: wrap;
+}
+
+footer p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.footer-nav a {
+  margin-left: 1.25rem;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.875rem;
+  transition: color 0.2s;
+}
+
+.footer-nav a:first-child {
+  margin-left: 0;
+}
+
+.footer-nav a:hover {
+  color: var(--fg);
+}
+
+/* Responsive — tablets and below */
+@media (max-width: 768px) {
+  .hero {
+    padding: 2.5rem 0 4rem;
+  }
+
+  .hero-inner {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+
+  .hero-text h1 {
+    font-size: 2rem;
+  }
+
+  .tagline {
+    font-size: 1rem;
+  }
+
+  .hero-lead {
+    font-size: 1rem;
+  }
+
+  .features,
+  .downloads,
+  .privacy {
+    padding: 3rem 0;
+  }
+
+  .features h2,
+  .downloads h2,
+  .privacy h2 {
+    font-size: 1.5rem;
+  }
+
+  /* Already single column at this width via the .download-grid base
+     rule, but make it explicit so future overrides don't break it. */
+  .download-grid {
+    grid-template-columns: 1fr;
+  }
+
+  footer .container {
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .footer-nav {
+    margin-left: 0;
+  }
+
+  .footer-nav a:first-child {
+    margin-left: 0;
+  }
+}
+
+/* Responsive — phones */
+@media (max-width: 480px) {
+  .container {
+    padding: 0 1rem;
+  }
+
+  .hero {
+    padding: 2rem 0 3rem;
+  }
+
+  .hero-text h1 {
+    font-size: 1.75rem;
+  }
+
+  .hero-visual {
+    height: 24vh;
+    min-height: 200px;
+  }
+
+  .btn {
+    padding: 0.5rem 1rem;
+  }
+
+  nav a {
+    margin: 0 0.5rem;
+    font-size: 0.8125rem;
+  }
+}

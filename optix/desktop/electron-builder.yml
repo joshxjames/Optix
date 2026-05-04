@@ -7,11 +7,64 @@ directories:
 files:
   - out/**
   - package.json
+
+# Pack the app into an asar archive. This is the default in modern
+# electron-builder, but we set it explicitly so the build can't silently
+# regress to a loose-files distribution (which would expose source on
+# disk and slow startup).
+asar: true
+
+# Files that MUST live on disk outside the asar archive:
+#   - native .node bindings (robotjs, node-mac-permissions, etc.) cannot
+#     be loaded from inside an asar.
+#   - any resource that needs a real fs path passed to a native API.
+# Add entries here as native deps are introduced. Globs are evaluated
+# against the bundled package.json's dependencies.
+asarUnpack:
+  - "**/*.node"
+  - node_modules/robotjs/**/*
+
+# Maximum compression — slower builds, smaller installers. Optional;
+# remove if CI build time becomes a problem.
+compression: maximum
+
 mac:
   target: dmg
   category: public.app-category.education
   artifactName: ${productName}-${version}.${ext}
+  # Hardened runtime is required for Apple notarization (Gatekeeper).
+  hardenedRuntime: true
+  # Gatekeeper assessment must remain on for distributed builds.
+  gatekeeperAssess: false
+  # TODO: add real signing identity before live release. Use a
+  # "Developer ID Application: <Team Name> (<TEAM_ID>)" cert imported
+  # into the macOS keychain. Leave null in CI dev builds so the
+  # pipeline doesn't fail when no cert is available.
+  identity: null
+  # TODO: add notarization config before live release. Recommended:
+  # set APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID env vars
+  # in CI and switch this block to:
+  #   notarize:
+  #     teamId: ${env.APPLE_TEAM_ID}
+  notarize: false
+  # Entitlements file (create resources/entitlements.mac.plist with
+  # com.apple.security.cs.allow-jit etc. if/when JIT-using deps land).
+  # entitlements: resources/entitlements.mac.plist
+  # entitlementsInherit: resources/entitlements.mac.plist
+
 win:
   target: portable
   artifactName: ${productName}-${version}.${ext}
+  # TODO: add real Authenticode signing config before live release.
+  # Recommended for CI:
+  #   signtoolOptions:
+  #     certificateFile: ${env.WINDOWS_CERT_FILE}
+  #     certificatePassword: ${env.WINDOWS_CERT_PASSWORD}
+  #     publisherName: "Optix"
+  #     signingHashAlgorithms:
+  #       - sha256
+  #     rfc3161TimeStampServer: http://timestamp.digicert.com
+  # Leaving certificateFile unset for now so unsigned dev builds work.
+  # certificateFile: null
+
 publish: null

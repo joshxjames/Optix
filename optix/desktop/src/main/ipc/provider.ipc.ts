@@ -502,7 +502,43 @@ export function registerProviderIpc(): void {
         `[optix-timing] provider=${activeProviderId} model=${modelId} mode=${req.mode} FAILED after=${Math.round(tErr - t0)}ms err=${message}`,
       );
       record(req, activeProviderId, modelId, { error: message });
-      throw err;
+      // Don't re-throw the raw provider/SDK error — it can carry stack
+      // traces, internal URLs, or HTTP body fragments that leak into
+      // the renderer. Surface a stable, sanitized Error with a generic
+      // message plus a structured `code` for future UX branching.
+      // TODO(renderer): App.tsx currently displays `err.message`
+      //   verbatim — once the renderer reads `err.code` instead, swap
+      //   the generic copy for code-specific user messaging.
+      let code: 'aborted' | 'auth' | 'billing' | 'rate_limited' | 'failed' =
+        'failed';
+      const lower = message.toLowerCase();
+      if (controller.signal.aborted || lower.includes('abort')) {
+        code = 'aborted';
+      } else if (
+        lower.includes('401') ||
+        lower.includes('unauthor') ||
+        lower.includes('invalid api key') ||
+        lower.includes('not signed in')
+      ) {
+        code = 'auth';
+      } else if (
+        lower.includes('quota') ||
+        lower.includes('billing') ||
+        lower.includes('insufficient')
+      ) {
+        code = 'billing';
+      } else if (
+        lower.includes('429') ||
+        lower.includes('rate limit') ||
+        lower.includes('too many requests')
+      ) {
+        code = 'rate_limited';
+      }
+      const sanitized = new Error('provider request failed') as Error & {
+        code: typeof code;
+      };
+      sanitized.code = code;
+      throw sanitized;
     } finally {
       if (currentAbort === controller) currentAbort = null;
     }

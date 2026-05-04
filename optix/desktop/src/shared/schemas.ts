@@ -411,6 +411,41 @@ export const ComputerToolResultSchema = z.object({
 });
 export type ComputerToolResult = z.infer<typeof ComputerToolResultSchema>;
 
+// Generic alias used by IPC layers that ship tool execution results
+// back to main. Same shape as ComputerToolResult — name reflects the
+// fact that file / shell / label results all flow through this same
+// envelope, not just computer-tool results.
+export const ToolResultSchema = ComputerToolResultSchema;
+export type ToolResult = ComputerToolResult;
+
+// ---------------------------------------------------------------------------
+// IPC request schemas for single-tool execution (used by the renderer's
+// per-action executor + the routine replayer). Mirror the request shapes
+// historically defined inline in computer.ipc.ts so the wire contract is
+// expressed in one place and the inferred types can be imported by the
+// renderer-facing api.ts surface.
+// ---------------------------------------------------------------------------
+
+export const ComputerExecuteRequestSchema = z.object({
+  action: ComputerToolActionSchema,
+  imageWidth: z.number().int().positive().optional(),
+  imageHeight: z.number().int().positive().optional(),
+  /** Non-Anthropic providers (Kimi, Gemini) ask the executor to snap
+   *  click coords to the nearest interactive UIA element. */
+  snapToUia: z.boolean().optional(),
+});
+export type ComputerExecuteRequest = z.infer<typeof ComputerExecuteRequestSchema>;
+
+export const FileExecuteRequestSchema = z.object({
+  action: FileToolActionSchema,
+});
+export type FileExecuteRequest = z.infer<typeof FileExecuteRequestSchema>;
+
+export const ShellExecuteRequestSchema = z.object({
+  action: ShellToolActionSchema,
+});
+export type ShellExecuteRequest = z.infer<typeof ShellExecuteRequestSchema>;
+
 // Server reply after a step. `done=true` means stop the loop and use
 // `finalResponse` as the user-facing answer. Otherwise execute `toolUses`,
 // gather results, and call `continue`. Each tool_use carries an
@@ -679,11 +714,20 @@ export const SettingsSchema = z.object({
    * Optional cost ceiling for a single Computer Use loop, in USD. The loop
    * checks the estimated cost after each turn and stops if it exceeds this
    * value. `null` (default) means no cap.
+   *
+   * Why `.positive()` and no silent `< 0.01` coercion to null:
+   *   - The previous `.nonnegative().transform(< 0.01 → null)` silently
+   *     converted a user-entered `0` into "no cap", which is the opposite
+   *     of what they intended (someone setting 0 wants the loop to halt
+   *     immediately, not to run unbounded).
+   *   - A user clearing the cap submits `null` from the UI's empty-input
+   *     path, so we don't need a magic-zero shortcut.
+   * Setting 0 (or any negative) is now rejected at parse time, surfacing
+   * a validation error to the renderer so the SettingsPanel can show
+   * "Cost ceiling must be greater than 0 — clear the field for no cap"
+   * rather than silently dropping the value.
    */
-  // 0/negative coerces to null because "no effective cap" should be
-  // expressed as null, not 0 — `cost <= 0` would otherwise short-circuit
-  // the loop's ceiling check on the very first turn.
-  agentCostCeilingUsd: z.number().nonnegative().nullable().default(null).transform((v) => (typeof v === 'number' && v < 0.01 ? null : v)),
+  agentCostCeilingUsd: z.number().positive().nullable().default(null),
   /**
    * Optional workspace-folder path. When set, file-system actions targeting
    * paths inside this folder follow the regular approval mode; actions

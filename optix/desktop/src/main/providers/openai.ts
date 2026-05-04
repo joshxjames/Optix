@@ -16,6 +16,21 @@ function getOpenAIClient(apiKey: string): OpenAI {
   return client;
 }
 
+/**
+ * Drop the cached OpenAI client. Called by registry fan-out after the
+ * user changes / deletes their key — without this the SDK keeps the
+ * old key in the pooled HTTP agent until the app restarts.
+ *
+ * NOTE on rate-limit behavior: the OpenAI SDK retries 429s with
+ * built-in exponential backoff. It does not surface response headers
+ * on errors in a stable shape, so we do NOT currently parse
+ * `Retry-After`. Fallback is the SDK's default backoff. TODO: parse
+ * Retry-After once `error.headers` becomes a stable contract.
+ */
+export function invalidateClientCache(): void {
+  clientCache.clear();
+}
+
 export const openaiProvider: Provider = {
   id: 'openai',
 
@@ -74,6 +89,18 @@ export const openaiProvider: Provider = {
         // OpenAI reports cached input tokens via prompt_tokens_details.
         // Treat them as cache reads — same billing semantics as Anthropic.
         cacheReadInputTokens: resp.usage.prompt_tokens_details?.cached_tokens,
+        // Cache CREATE counter — current OpenAI SDK types only expose
+        // `cached_tokens` (read). If/when OpenAI ships a write counter
+        // it'll most likely surface either as a sibling field on
+        // `prompt_tokens_details` or as a top-level
+        // `cache_creation_input_tokens` (mirroring Anthropic). We read
+        // defensively now so the value gets billed automatically once
+        // the SDK catches up — undefined today, populated later.
+        cacheCreationInputTokens:
+          (resp.usage.prompt_tokens_details as { cached_tokens_write?: number } | undefined)
+            ?.cached_tokens_write ??
+          (resp.usage as unknown as { cache_creation_input_tokens?: number })
+            .cache_creation_input_tokens,
       });
     }
 
@@ -152,6 +179,12 @@ async function runWithWebSearch(
         inputTokens: resp.usage.prompt_tokens,
         outputTokens: resp.usage.completion_tokens,
         cacheReadInputTokens: resp.usage.prompt_tokens_details?.cached_tokens,
+        // Prompt-cache writes — same defensive read as the non-search path.
+        cacheCreationInputTokens:
+          (resp.usage.prompt_tokens_details as { cached_tokens_write?: number } | undefined)
+            ?.cached_tokens_write ??
+          (resp.usage as unknown as { cache_creation_input_tokens?: number })
+            .cache_creation_input_tokens,
       });
     }
 

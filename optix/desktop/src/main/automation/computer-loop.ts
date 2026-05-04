@@ -17,8 +17,10 @@
 // delegates.
 
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
 import {
   ComputerLoopTurnSchema,
+  ComputerToolResultSchema,
   type ComputerLoopAppendRequest,
   type ComputerLoopContinueRequest,
   type ComputerLoopStartRequest,
@@ -50,6 +52,25 @@ import type { ProviderId } from '@shared/schemas';
 // loop (e.g. re-screenshotting the same state forever).
 const MAX_TURNS = 100;
 
+// Soft input-token ceiling per turn. Conversation-mode loops accumulate
+// messages without bound (each turn appends a screenshot + tool_result);
+// 100 turns × ~50 messages × image bytes can OOM the renderer or get the
+// provider to reject the request as "context window exceeded". Anthropic
+// Sonnet/Opus support 200K; we keep a safety margin so the provider's own
+// limit isn't what trips us. When the projected total crosses this, the
+// adapter's message history is truncated (see `maybeTruncateHistory`).
+const TOKEN_SOFT_CAP = 150_000;
+// Rough heuristic — bytes / 4 ≈ tokens for English + base64 images. Image
+// blocks are the dominant cost; we estimate via the JSON.stringify byte
+// length of the message array.
+const BYTES_PER_TOKEN_ESTIMATE = 4;
+// Truncation policy: keep the system-equivalent first 2 turns (the
+// initial user prompt + the model's first reply), the most recent
+// 20 turns, and drop everything in the middle. A "turn" here is one
+// message in Anthropic's user/assistant array.
+const KEEP_FIRST_TURNS = 2;
+const KEEP_LAST_TURNS = 20;
+
 type LoopState = {
   loopId: string;
   providerId: ProviderId;
@@ -75,9 +96,75 @@ type LoopState = {
   awaitingResults: boolean;
   abortController: AbortController;
   startedAt: number;
+  // Snapshot of the cost ceiling at loop start. We deliberately do NOT
+  // re-read this from settings on every step: behaviour stays
+  // deterministic for the lifetime of the loop (even if the user opens
+  // settings mid-run and bumps the ceiling, the new value won't take
+  // effect until the next startComputerLoop). If you want live updates
+  // in the future, the safer pattern is `Math.min(snapshot, current)`
+  // so the user can lower but not raise the cap mid-run.
   costCeilingUsd: number | null;
   workspaceFolder: string | null;
 };
+
+// Schema for the tool_result array a renderer passes back via IPC. We
+// re-use the shared ComputerToolResultSchema directly. Kept inline so a
+// failure here surfaces a typed error to the IPC caller rather than
+// crashing later in the adapter when an unexpected field shape blows up
+// `appendResults`.
+const ToolResultArraySchema = z.array(ComputerToolResultSchema);
+
+/** Roughly estimate tokens for a provider state object. We don't have
+ *  visibility into the provider-native message shape (each adapter holds
+ *  its own opaque state), so we serialise to JSON and divide by 4. This
+ *  over-estimates slightly for base64 images (which compress better than
+ *  4:1 in token space) — that's fine, we'd rather truncate a bit early
+ *  than blow the actual context window. */
+function estimateStateBytes(state: unknown): number {
+  try {
+    return JSON.stringify(state, (_k, v) => {
+      // Uint8Array / Buffer → use byteLength so images cost what they
+      // cost rather than printing a huge JSON-ified array of integers.
+      if (v instanceof Uint8Array) return `<${v.byteLength}b>`;
+      return v;
+    }).length;
+  } catch {
+    return 0;
+  }
+}
+
+/** Truncate the adapter's message history when projected input tokens
+ *  approach the soft cap. The policy is intentionally simple — keep the
+ *  first KEEP_FIRST_TURNS messages (initial prompt + first assistant
+ *  reply, which carry the task framing) and the last KEEP_LAST_TURNS
+ *  (recent context the model needs to make its next decision); drop the
+ *  middle. Provider adapters store their messages on a `messages` array
+ *  field on the opaque state object — we duck-type that here rather
+ *  than threading a new API method through every adapter. */
+function maybeTruncateHistory(state: LoopState): void {
+  const bytes = estimateStateBytes(state.adapterState);
+  const tokens = Math.floor(bytes / BYTES_PER_TOKEN_ESTIMATE);
+  if (tokens < TOKEN_SOFT_CAP) return;
+  // Duck-type access — every adapter we currently ship (Anthropic,
+  // OpenAI, Kimi, Google, OptixCloud) stores its history on
+  // `state.messages`. If a future adapter uses a different field this
+  // is a no-op and the loop just keeps growing until the provider
+  // returns a context-overflow error. TODO: add a formal
+  // `truncateHistory()` method to AgentProviderAdapter — out of scope
+  // for this fix (Fix Agent C owns providers/agent-providers).
+  const adapter = state.adapterState as { messages?: unknown[] };
+  if (!Array.isArray(adapter.messages)) return;
+  const total = adapter.messages.length;
+  if (total <= KEEP_FIRST_TURNS + KEEP_LAST_TURNS) return;
+  const head = adapter.messages.slice(0, KEEP_FIRST_TURNS);
+  const tail = adapter.messages.slice(total - KEEP_LAST_TURNS);
+  const dropped = total - head.length - tail.length;
+  adapter.messages = [...head, ...tail];
+  console.warn(
+    `[optix-cu] history truncated: estimated ${tokens} tokens > cap ${TOKEN_SOFT_CAP}; ` +
+      `dropped ${dropped} middle messages (kept first ${head.length} + last ${tail.length})`,
+  );
+}
 
 const loops = new Map<string, LoopState>();
 
@@ -108,6 +195,13 @@ async function stepAndRecord(state: LoopState): Promise<ComputerLoopTurn> {
   // the accurate post-this-turn total. Doing the cap check after
   // `recordTurn` would already have committed the over-budget row to disk
   // before the user could be told.
+  //
+  // `state.costCeilingUsd` was snapshotted at loop start (see LoopState
+  // doc) — if the user changes the setting mid-run it does NOT affect
+  // the in-flight loop. This is deliberate: deterministic billing
+  // behaviour beats cleverness, and "I started a $5 run, then dropped
+  // the cap to $2 in settings, then it kept going past $2" is the kind
+  // of surprise we'd rather avoid.
   const projectedCost =
     state.costCeilingUsd != null
       ? (getEstimatedCost(state.loopId) ?? 0) +
@@ -308,20 +402,38 @@ export async function continueComputerLoop(
     state.adapter.refreshCredential(state.adapterState, req.authToken);
   }
 
+  // Defensive parse — `req.results` is typed `AgentToolResult[]` at the
+  // TypeScript level, but the IPC boundary erases types and a malformed
+  // payload (wrong field shapes, non-string ids, oversized blobs) would
+  // otherwise propagate into `appendResults` and crash the adapter. The
+  // outer IPC validator already runs the request schema, but the array
+  // members are validated here to keep the loop self-defending if a
+  // caller updates one schema without the other.
+  const parsed = ToolResultArraySchema.safeParse(req.results);
+  if (!parsed.success) {
+    throw new Error(
+      `Invalid tool_result payload: ${parsed.error.issues
+        .slice(0, 3)
+        .map((i) => `${i.path.join('.')}: ${i.message}`)
+        .join('; ')}`,
+    );
+  }
+  const validatedResults = parsed.data as AgentToolResult[];
+
   // Validate that every parsed-action id has a renderer-supplied result.
   // The adapter handles parse-error ids internally during appendResults.
-  const provided = new Set(req.results.map((r) => r.toolUseId));
+  const provided = new Set(validatedResults.map((r) => r.toolUseId));
   for (const [id] of state.pendingActions) {
     if (!provided.has(id)) {
       loops.delete(req.loopId);
       throw new Error(
-        `Missing tool_result for tool_use ${id}. Expected ${state.pendingActions.size} results, got ${req.results.length}.`,
+        `Missing tool_result for tool_use ${id}. Expected ${state.pendingActions.size} results, got ${validatedResults.length}.`,
       );
     }
   }
 
   // Audit each renderer-supplied result against its parsed action.
-  for (const r of req.results as AgentToolResult[]) {
+  for (const r of validatedResults) {
     const action = state.pendingActions.get(r.toolUseId);
     if (!action) continue; // parse error — already accounted for by the adapter
     const resultKind: 'screenshot' | 'text' | 'error' | 'none' = r.errorText
@@ -350,7 +462,7 @@ export async function continueComputerLoop(
   // model re-reads its plan before the next assistant turn.
   state.adapter.appendResults(
     state.adapterState,
-    req.results as AgentToolResult[],
+    validatedResults,
     { extraUserText: req.extraUserText },
   );
   state.pendingActions = new Map();
@@ -359,6 +471,12 @@ export async function continueComputerLoop(
   // another continue.
   state.awaitingResults = false;
   state.turnIndex += 1;
+
+  // After appending results to the conversation, check whether the
+  // accumulated history is approaching the soft token cap. We do this
+  // BEFORE the next `step()` so the adapter sends a smaller payload
+  // rather than getting rejected by the provider for context overflow.
+  maybeTruncateHistory(state);
 
   if (state.turnIndex >= MAX_TURNS) {
     loops.delete(req.loopId);
@@ -444,6 +562,12 @@ export async function appendUserMessageToLoop(
   });
   state.pendingActions = new Map();
   state.turnIndex += 1;
+
+  // Conversation-mode follow-ups are the most likely path to hit the
+  // soft cap (the loop has been running for many turns and now the
+  // user appends another task on top). Truncate before the next step
+  // for the same reason as `continueComputerLoop` above.
+  maybeTruncateHistory(state);
   // Record the new prompt in the audit log BEFORE the next turn fires
   // so its `firstTurnIndex` correctly points at the upcoming turn (the
   // first one the agent will produce in response to this message).

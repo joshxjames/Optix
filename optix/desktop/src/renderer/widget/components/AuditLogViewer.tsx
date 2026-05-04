@@ -9,6 +9,7 @@ import {
   ProviderIcon,
   TurnsIcon,
 } from './Icons';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 type Props = {
   onClose: () => void;
@@ -79,16 +80,28 @@ export function AuditLogViewer({ onClose }: Props) {
   const [view, setView] = useState<View>({ kind: 'loading' });
   const [summaries, setSummaries] = useState<AuditLogSummary[]>([]);
 
+  // Initial list fetch. Cancel-on-unmount via the `cancelled` flag —
+  // without it, closing the viewer mid-fetch would fire setState on
+  // an unmounted component when the IPC eventually resolves.
   useEffect(() => {
+    let cancelled = false;
     void window.optix.audit
       .list()
       .then((items) => {
+        if (cancelled) return;
         setSummaries(items);
         setView({ kind: 'list' });
       })
-      .catch((err) =>
-        setView({ kind: 'error', message: err instanceof Error ? err.message : String(err) }),
-      );
+      .catch((err) => {
+        if (cancelled) return;
+        setView({
+          kind: 'error',
+          message: err instanceof Error ? err.message : String(err),
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function openDetail(filename: string): Promise<void> {
@@ -145,15 +158,10 @@ export function AuditLogViewer({ onClose }: Props) {
   };
 
   // Modal hygiene: Escape mirrors the back arrow (detail → list →
-  // close). Re-bound on view change so the captured `view` is current.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') goBack();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, onClose]);
+  // close). The shared hook keeps `goBack` fresh through a ref, so
+  // we attach the listener once instead of churning it on every
+  // view/onClose change.
+  useEscapeKey(goBack);
 
   return (
     <div className="audit">

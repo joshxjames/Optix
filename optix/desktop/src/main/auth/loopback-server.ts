@@ -95,19 +95,35 @@ export async function startLoopbackServer(
   if (active) stopLoopbackServer();
 
   const server = createServer((req, res) => {
+    // Defense-in-depth: even though we bind to 127.0.0.1, a WSL bridge
+    // or misbehaving local proxy could surface non-loopback peers.
+    // Reject anything that isn't an explicit loopback address.
+    const remote = req.socket.remoteAddress ?? '';
+    const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+    if (!LOOPBACK.has(remote)) {
+      console.warn(
+        `[optix-auth] rejected non-loopback connection from ${remote}`,
+      );
+      res.removeHeader('Server');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.writeHead(403, { 'content-type': 'text/plain' });
+      res.end('forbidden');
+      req.socket.destroy();
+      return;
+    }
+
     // Match the request path against our configured set. Anything else
     // 404s — protects against probes from other local processes and
     // accidental hits from the user's browser history.
     const reqPath = (req.url ?? '').split('?')[0] ?? '';
     const matched = paths.find((p) => p.path === reqPath);
     if (!matched) {
+      res.removeHeader('Server');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
       res.writeHead(404, { 'content-type': 'text/plain' });
       res.end('not found');
       return;
     }
-
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    res.end(matched.html ?? AUTH_SUCCESS_HTML);
 
     // Reconstruct the absolute URL the browser hit so the renderer
     // can pass it verbatim into Firebase's `signInWithEmailLink`. The
@@ -115,10 +131,32 @@ export async function startLoopbackServer(
     // mode, lang, continueUrl) — we don't parse them ourselves.
     const port = (server.address() as AddressInfo | null)?.port ?? 0;
     const fullUrl = `http://127.0.0.1:${port}${req.url ?? ''}`;
+
+    // Invoke onCallback FIRST so we can surface app-side failure to the
+    // user's browser tab. If it throws, the success page would lie about
+    // a working sign-in; show a graceful error message instead.
+    let callbackOk = true;
     try {
       onCallback(fullUrl);
     } catch (err) {
+      callbackOk = false;
       console.error('[optix-auth] onCallback threw:', err);
+    }
+
+    res.removeHeader('Server');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (callbackOk) {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end(matched.html ?? AUTH_SUCCESS_HTML);
+    } else {
+      res.writeHead(500, { 'content-type': 'text/html; charset=utf-8' });
+      res.end(
+        renderLandingPage(
+          'Sign-in could not complete',
+          'You can close this tab — but the app reported an error. ' +
+            'Please return to Optix and try again.',
+        ),
+      );
     }
 
     // One-shot: this listener has done its job. Tear down the server

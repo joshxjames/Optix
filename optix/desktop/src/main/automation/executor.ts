@@ -8,6 +8,7 @@ import type {
 import { resolveLabelToScreenPoint } from '@main/automation/label-resolver';
 import { getUiaElements, getUiaElementsAtPoint, type UiaElement } from '@main/capture/uia';
 import { normalize, scoreLabelMatch } from '@main/capture/snap-to-uia';
+import { captureForegroundHwnd } from '@main/automation/foreground';
 
 
 // Lazy-load robotjs so a missing or broken native binding doesn't crash the
@@ -60,6 +61,12 @@ export type ExecuteOptions = {
    *  accurate providers (Anthropic, OpenAI) but adds ~150-300ms per click
    *  for the UIA enumeration. */
   snapToUia?: boolean;
+  /** HWND (decimal string) of the foreground window the loop captured at
+   *  start. When set, destructive actions (click, type, key) re-query the
+   *  current foreground before dispatching robotjs and refuse if the user
+   *  Alt-Tabbed away mid-loop. Optional — callers that don't know the
+   *  expected HWND skip the check. */
+  expectedForegroundHwnd?: string;
 };
 
 // Auto-snap radius for SPATIAL-ONLY snap (no `target` label provided).
@@ -269,7 +276,24 @@ function imageToDisplay(
   imageWidth: number | undefined,
   imageHeight: number | undefined,
 ): { x: number; y: number } {
-  if (!imageWidth || !imageHeight) {
+  // Treat zero / negative dims the same as missing dims — fall back to
+  // raw coords. Without this check, `display.width / 0` produces
+  // Infinity and the click lands at INT_MAX (or NaN, depending on the
+  // path). The capture pipeline should never hand us a zero-dimension
+  // image but we've seen malformed payloads from providers that
+  // hallucinate metadata; defending here means the action is a no-op
+  // (or at worst clamped) instead of a corrupt screen click.
+  if (!imageWidth || !imageHeight || imageWidth <= 0 || imageHeight <= 0) {
+    if (imageWidth !== undefined && imageWidth <= 0) {
+      console.warn(
+        `[optix-cu] non-positive imageWidth=${imageWidth}; using raw coords`,
+      );
+    }
+    if (imageHeight !== undefined && imageHeight <= 0) {
+      console.warn(
+        `[optix-cu] non-positive imageHeight=${imageHeight}; using raw coords`,
+      );
+    }
     return { x: Math.round(x), y: Math.round(y) };
   }
   const display = screen.getPrimaryDisplay();
@@ -278,6 +302,28 @@ function imageToDisplay(
   return {
     x: display.bounds.x + Math.round(x * sx),
     y: display.bounds.y + Math.round(y * sy),
+  };
+}
+
+/** Verify the foreground window still matches the one captured at loop
+ *  start. Returns null on match (proceed) or an error code on mismatch
+ *  (caller should refuse the action). Best-effort: if we can't query the
+ *  foreground at all, we proceed — refusing every action when the
+ *  PowerShell helper hiccups would lock the loop. The expected guard is
+ *  for "user Alt-Tabbed away", not "PowerShell glitched once". */
+async function checkForegroundUnchanged(
+  expected: string | undefined,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!expected) return { ok: true };
+  const current = await captureForegroundHwnd();
+  if (current === null) return { ok: true }; // best-effort
+  if (current === expected) return { ok: true };
+  console.warn(
+    `[optix-cu] foreground_changed: expected=${expected} current=${current} — refusing destructive action`,
+  );
+  return {
+    ok: false,
+    error: `foreground_changed: expected HWND ${expected}, current ${current}. Action skipped because the user switched windows mid-loop.`,
   };
 }
 
@@ -298,6 +344,11 @@ export async function executeAction(
     const robot = await getRobot();
     switch (action.kind) {
       case 'click': {
+        // Foreground guard: refuse if the user Alt-Tabbed away mid-loop.
+        // Caller passes the HWND captured at loop start; if it's missing
+        // we skip the check (best-effort default).
+        const fg = await checkForegroundUnchanged(opts.expectedForegroundHwnd);
+        if (!fg.ok) return { ok: false, error: fg.error };
         const { x, y } = imageToDisplay(action.x, action.y, opts.imageWidth, opts.imageHeight);
         // 5ms is enough on modern Windows for the move+click to be seen
         // as two events (was 20ms — measurable per-click savings).
@@ -308,6 +359,11 @@ export async function executeAction(
         return { ok: true };
       }
       case 'type': {
+        // Same foreground guard — typing into the wrong window is the
+        // most damaging mistake (could send a chat message, edit code,
+        // submit a form). Refuse if the foreground changed.
+        const fg = await checkForegroundUnchanged(opts.expectedForegroundHwnd);
+        if (!fg.ok) return { ok: false, error: fg.error };
         // Char-by-char with extra pause before duplicate chars so Windows
         // doesn't coalesce them. 100ms (was 120ms) is still safely above
         // Windows' ~50ms key-repeat cycle. 25ms baseline keeps unique
@@ -447,6 +503,10 @@ export async function executeComputerAction(
 
       case 'left_mouse_down':
       case 'left_mouse_up': {
+        // Drag-style actions are also destructive — refuse on
+        // foreground change for the same reason as clicks.
+        const fg = await checkForegroundUnchanged(opts.expectedForegroundHwnd);
+        if (!fg.ok) return { ok: false, error: fg.error };
         const [ix, iy] = action.coordinate;
         const { x, y } = imageToDisplay(ix, iy, opts.imageWidth, opts.imageHeight);
         robot.setMouseDelay(5);
@@ -461,6 +521,13 @@ export async function executeComputerAction(
       case 'middle_click':
       case 'double_click':
       case 'triple_click': {
+        // Foreground guard before any click. If the user Alt-Tabbed
+        // mid-loop the click would land in the wrong app — refuse and
+        // let the loop driver re-prompt or abort. See `checkForeground
+        // Unchanged` for the best-effort fallback when the helper is
+        // unavailable.
+        const fg = await checkForegroundUnchanged(opts.expectedForegroundHwnd);
+        if (!fg.ok) return { ok: false, error: fg.error };
         const [ix, iy] = action.coordinate;
         let { x, y } = imageToDisplay(ix, iy, opts.imageWidth, opts.imageHeight);
         // Weaker vision models (Kimi) sometimes generate coords past the
@@ -540,6 +607,8 @@ export async function executeComputerAction(
       }
 
       case 'left_click_drag': {
+        const fg = await checkForegroundUnchanged(opts.expectedForegroundHwnd);
+        if (!fg.ok) return { ok: false, error: fg.error };
         const [sx, sy] = action.start_coordinate;
         const [ex, ey] = action.coordinate;
         const start = imageToDisplay(sx, sy, opts.imageWidth, opts.imageHeight);
@@ -569,6 +638,10 @@ export async function executeComputerAction(
       }
 
       case 'type': {
+        // Foreground guard — typing in the wrong app is the worst
+        // failure mode (could fire off chat / edit unintended files).
+        const fg = await checkForegroundUnchanged(opts.expectedForegroundHwnd);
+        if (!fg.ok) return { ok: false, error: fg.error };
         // Char-by-char with extra pause before duplicate chars so Windows
         // doesn't coalesce them. 100ms (was 120ms) is still safely above the
         // ~50ms Windows key-repeat cycle without being needlessly slow.
@@ -585,6 +658,8 @@ export async function executeComputerAction(
       }
 
       case 'key': {
+        const fg = await checkForegroundUnchanged(opts.expectedForegroundHwnd);
+        if (!fg.ok) return { ok: false, error: fg.error };
         const { key, modifiers } = parseKeyCombo(action.text);
         if (!key) return { ok: false, error: `Empty key combo: ${action.text}` };
         try {
@@ -603,6 +678,8 @@ export async function executeComputerAction(
       }
 
       case 'hold_key': {
+        const fg = await checkForegroundUnchanged(opts.expectedForegroundHwnd);
+        if (!fg.ok) return { ok: false, error: fg.error };
         const { key, modifiers } = parseKeyCombo(action.text);
         if (!key) return { ok: false, error: `Empty key combo: ${action.text}` };
         const ms = Math.min(10_000, Math.max(0, action.duration * 1000));
@@ -663,6 +740,7 @@ export async function executeComputerAction(
 
 export async function executeLabelAction(
   action: LabelToolAction,
+  opts: ExecuteOptions = {},
 ): Promise<ComputerExecuteResult> {
   try {
     const robot = await getRobot();
@@ -670,10 +748,28 @@ export async function executeLabelAction(
     if (!resolution.ok) {
       return { ok: false, error: resolution.reason };
     }
-    const { x, y, element } = resolution;
+    const { x, y, element, identity, resolvedAt } = resolution;
+    // Stale-element diagnostic: how long between UIA query and dispatch?
+    // High deltas (>500ms) are a hint that the UI may have re-flowed
+    // and the cached coordinates are pointing at a different element.
+    // We don't act on it yet (no re-query/retry); just log so we can
+    // grep for races in the field. See LabelResolution.identity for
+    // the planned retry hook.
+    const dispatchAt = Date.now();
+    const dt = dispatchAt - resolvedAt;
+    if (dt > 500) {
+      console.warn(
+        `[optix-label-stale] label="${action.label}" id=${identity} ` +
+          `resolve→dispatch=${dt}ms — element bounds may be stale`,
+      );
+    }
 
     switch (action.action) {
       case 'click_label': {
+        // Foreground guard: refuse if user Alt-Tabbed mid-loop. Same
+        // policy as coordinate clicks — see checkForegroundUnchanged.
+        const fg = await checkForegroundUnchanged(opts.expectedForegroundHwnd);
+        if (!fg.ok) return { ok: false, error: fg.error };
         robot.setMouseDelay(5);
         robot.moveMouse(x, y);
         robot.mouseClick();
@@ -683,6 +779,8 @@ export async function executeLabelAction(
         return { ok: true, text: `Clicked "${element.name}" at (${x}, ${y}).` };
       }
       case 'scroll_label': {
+        const fg = await checkForegroundUnchanged(opts.expectedForegroundHwnd);
+        if (!fg.ok) return { ok: false, error: fg.error };
         const px = action.amount * 120;
         let dx = 0, dy = 0;
         switch (action.direction) {
@@ -703,6 +801,8 @@ export async function executeLabelAction(
         };
       }
       case 'type_into_label': {
+        const fg = await checkForegroundUnchanged(opts.expectedForegroundHwnd);
+        if (!fg.ok) return { ok: false, error: fg.error };
         // Click to focus, then char-by-char type with the same duplicate-pause
         // safety as `executeComputerAction.type`.
         robot.setMouseDelay(5);

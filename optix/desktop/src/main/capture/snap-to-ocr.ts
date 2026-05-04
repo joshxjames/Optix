@@ -72,6 +72,7 @@ function dist2(
 export function snapRegionsToOcr(
   regions: TargetRegion[],
   ocrBoxes: OcrBox[],
+  imageDims?: { width: number; height: number },
 ): TargetRegion[] {
   if (regions.length === 0 || ocrBoxes.length === 0) return regions;
 
@@ -104,13 +105,67 @@ export function snapRegionsToOcr(
       }
     }
 
-    if (!best) return region;
+    if (!best) {
+      // Diagnostic: when no OCR word cleared the distance + text gates,
+      // surface the input so the caller has a signal that snap silently
+      // returned the model's original (likely loose) region. Mirrors the
+      // analogous log in snap-to-uia.ts.
+      console.warn(
+        '[snap-to-ocr] no match within distance, returning original region',
+        {
+          label: region.label,
+          regionCenter,
+          maxDistPx: MAX_CENTER_DIST_PX,
+          ocrCount: ocrBoxes.length,
+        },
+      );
+      return region;
+    }
+    // Clamp to image bounds when caller supplied dimensions. Without this
+    // an OCR box that runs to the very edge of the screenshot can emit
+    // x+width slightly past imageWidth depending on tesseract's rounding,
+    // and downstream crops produce empty slices.
+    const bbox = best.box.bbox;
+    if (imageDims && imageDims.width > 0 && imageDims.height > 0) {
+      const clampedX = Math.max(0, Math.min(imageDims.width - 1, bbox.x));
+      const clampedY = Math.max(0, Math.min(imageDims.height - 1, bbox.y));
+      const clampedRight = Math.max(clampedX + 1, Math.min(imageDims.width, bbox.x + bbox.width));
+      const clampedBottom = Math.max(clampedY + 1, Math.min(imageDims.height, bbox.y + bbox.height));
+      const clampedW = clampedRight - clampedX;
+      const clampedH = clampedBottom - clampedY;
+      if (clampedW <= 0 || clampedH <= 0) {
+        // Snapped box is fully outside the image — fall back to the
+        // model's original region rather than emit a degenerate bbox.
+        console.warn(
+          '[snap-to-ocr] snapped bbox fully outside image, falling back to original region',
+          { label: region.label, bbox, imageDims },
+        );
+        return region;
+      }
+      if (
+        clampedX !== bbox.x ||
+        clampedY !== bbox.y ||
+        clampedW !== bbox.width ||
+        clampedH !== bbox.height
+      ) {
+        console.warn(
+          `[snap-to-ocr] clipped bbox to image=${imageDims.width}x${imageDims.height} for label="${region.label}"`,
+        );
+      }
+      return {
+        label: region.label,
+        x: clampedX,
+        y: clampedY,
+        width: clampedW,
+        height: clampedH,
+      };
+    }
     return {
       label: region.label,
-      x: best.box.bbox.x,
-      y: best.box.bbox.y,
-      width: best.box.bbox.width,
-      height: best.box.bbox.height,
+      x: bbox.x,
+      y: bbox.y,
+      width: bbox.width,
+      height: bbox.height,
     };
   });
 }

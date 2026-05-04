@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   DOC_ARTICLES,
   DOC_CATEGORIES,
   type DocArticle,
   type DocBlock,
 } from './docs/articles';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 type Props = {
   onClose: () => void;
@@ -87,15 +88,10 @@ export function DocsViewer({ onClose }: Props) {
 
   // Modal hygiene: Escape mirrors the back arrow. The list view's
   // search input keeps autoFocus (more useful than the Back button on
-  // a docs index) — Escape covers the keyboard-dismiss path.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') goBack();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, onClose]);
+  // a docs index) — Escape covers the keyboard-dismiss path. The
+  // shared hook reads `goBack` through a ref so the listener attaches
+  // once instead of churning on every view/onClose change.
+  useEscapeKey(goBack);
 
   return (
     <div className="audit docs">

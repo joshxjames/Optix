@@ -41,6 +41,7 @@ import { registerHotkeys, unregisterHotkeys } from '@main/hotkeys/register';
 import { getSettings, setSettings } from '@main/storage/settings-store';
 import { finalizeAllPendingLoops } from '@main/automation/computer-loop';
 import { reapAllShellChildren } from '@main/automation/shell-executor';
+import { wipeAllCachedKeys } from '@main/security/keychain';
 
 // Single-instance lock: second launch focuses the existing widget instead of
 // opening a second app.
@@ -90,6 +91,14 @@ app.on('before-quit', () => {
     reapAllShellChildren();
   } catch (err) {
     console.error('[optix] shell reaper failed:', err);
+  }
+  try {
+    // Drop the keychain in-memory cache before exit. JS strings are immutable
+    // so this can't truly zero them, but dropping references promptly limits
+    // exposure to memory dumps captured post-quit.
+    wipeAllCachedKeys();
+  } catch (err) {
+    console.error('[optix] keychain wipe failed:', err);
   }
 });
 

@@ -23,7 +23,22 @@ export function isSafeExternalUrl(url: string): boolean {
  *  Function only ever returns Stripe-hosted URLs, but a misbehaving
  *  relay (or a future bug there) shouldn't be able to redirect the
  *  user's browser to an arbitrary domain. We require https + a
- *  *.stripe.com hostname. */
+ *  *.stripe.com hostname.
+ *
+ *  Allowlist semantics:
+ *  - scheme MUST be https (no http, no data:, no javascript:)
+ *  - hostname MUST be `stripe.com` or a subdomain thereof. The regex
+ *    `(^|\.)stripe\.com$` matches `stripe.com`, `checkout.stripe.com`,
+ *    `billing.stripe.com`, etc., but NOT `stripe.com.evil.example` or
+ *    `notstripe.com` (the leading anchor is `.` or start-of-string).
+ *
+ *  Residual risk: subdomain takeover. If Stripe ever leaves a CNAME
+ *  pointing at an unclaimed cloud resource, an attacker could in
+ *  principle host content at `*.stripe.com`. We accept this risk —
+ *  Stripe's security posture is the bar; we trust the apex domain
+ *  unconditionally. Tightening to a specific subdomain (e.g. only
+ *  `checkout.stripe.com`) would break legitimate redirects between
+ *  Stripe's own hosted pages. */
 export function isAllowedStripeUrl(url: string): boolean {
   try {
     const u = new URL(url);

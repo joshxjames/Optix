@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc';
 import type { CaptureResult, OptixApi, OverlayRenderPayload } from '../shared/api';
+import { StoredPlanSchema, type StoredPlan } from '../shared/schemas';
 
 // The whitelisted surface exposed to both renderers. Renderer code NEVER
 // touches ipcRenderer directly; everything funnels through this bridge. If we
@@ -44,6 +45,27 @@ async function openStream(): Promise<HTMLVideoElement> {
   });
   await video.play();
 
+  // Drop our held references the moment the stream goes inactive — e.g.
+  // the user revoked screen-recording permission via OS Settings, or
+  // closed the source window the picker chose. The `.active` poll in
+  // openStream() catches it on the *next* capture, but we can't rely on
+  // that flipping immediately on every platform. The `inactive` event
+  // is the authoritative signal; `removetrack` is a parallel safeguard
+  // for browsers that fire it when a track ends without the parent
+  // stream's `inactive` firing (Linux/Pipewire path historically).
+  // Without this, privacy-mode toggling can race a still-held stream
+  // and a stale frame would slip through.
+  const onInactive = (): void => {
+    if (heldStream === stream) releaseStream();
+  };
+  stream.addEventListener('inactive', onInactive);
+  stream.addEventListener('removetrack', onInactive);
+  for (const t of stream.getTracks()) {
+    // Some platforms (older Chromium on macOS) only fire `ended` on the
+    // track, not `inactive` on the stream. Belt-and-braces.
+    t.addEventListener('ended', onInactive);
+  }
+
   heldStream = stream;
   heldVideo = video;
   return video;
@@ -69,9 +91,11 @@ async function captureScreen(): Promise<CaptureResult> {
   const video = await openStream();
   const tStream = performance.now();
 
-  const canvas = document.createElement('canvas');
+  let canvas: HTMLCanvasElement | null = document.createElement('canvas');
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
+  const width = canvas.width;
+  const height = canvas.height;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas 2d context unavailable.');
   ctx.drawImage(video, 0, 0);
@@ -81,8 +105,8 @@ async function captureScreen(): Promise<CaptureResult> {
   // skip the browser-side base64 step entirely. Main encodes to base64 once
   // (cheaply, in Node) when building each provider's request.
   const mimeType = 'image/jpeg';
-  const blob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob(
+  let blob: Blob | null = await new Promise<Blob>((resolve, reject) => {
+    canvas!.toBlob(
       (b) => (b ? resolve(b) : reject(new Error('canvas.toBlob returned null.'))),
       mimeType,
       0.85,
@@ -92,11 +116,24 @@ async function captureScreen(): Promise<CaptureResult> {
   const imageBytes = new Uint8Array(arrayBuffer);
   const tEncode = performance.now();
 
+  // Explicit cleanup. At 30 captures/min over a long Access run the
+  // transient canvases + blobs accumulate visible heap pressure even
+  // after references go out of scope (V8 holds onto detached canvas
+  // backing buffers longer than expected). Zeroing the dimensions
+  // releases the bitmap on Chromium; nulling locals helps GC tag them
+  // promptly. We don't use `URL.createObjectURL` on this path so no
+  // `revokeObjectURL` is needed — leaving the comment as a marker
+  // for any future code that does.
+  canvas.width = 0;
+  canvas.height = 0;
+  canvas = null;
+  blob = null;
+
   return {
     imageBytes,
     imageMimeType: mimeType,
-    width: canvas.width,
-    height: canvas.height,
+    width,
+    height,
     timings: {
       grabMs: Math.round(tStream - t0),
       resizeMs: Math.round(tFrame - tStream),
@@ -232,7 +269,27 @@ const api: OptixApi = {
     save: (req) => ipcRenderer.invoke(IPC.plan.save, req),
     clear: () => ipcRenderer.invoke(IPC.plan.clear),
     onChanged: (cb) => {
-      const listener = (_e: unknown, plan: unknown) => cb(plan as any);
+      // Validate the broadcast payload before invoking the renderer
+      // callback. The wire shape is `StoredPlan | null`; a malformed
+      // payload (compromised main, IPC-channel collision) should be
+      // logged and dropped rather than letting an unchecked `as any`
+      // smuggle the wrong shape into renderer state.
+      const listener = (_e: unknown, plan: unknown) => {
+        if (plan === null) {
+          cb(null);
+          return;
+        }
+        const parsed = StoredPlanSchema.safeParse(plan);
+        if (!parsed.success) {
+          console.warn(
+            '[optix-preload] dropped plan.changed payload — failed schema validation:',
+            parsed.error.issues,
+          );
+          return;
+        }
+        const validated: StoredPlan = parsed.data;
+        cb(validated);
+      };
       ipcRenderer.on(IPC.plan.changed, listener);
       return () => ipcRenderer.removeListener(IPC.plan.changed, listener);
     },

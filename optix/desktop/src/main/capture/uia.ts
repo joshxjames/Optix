@@ -17,6 +17,20 @@ export type UiaElement = {
 const UIA_TIMEOUT_MS = 8000;
 const UIA_NODE_CAP = 5000;
 
+// Sidecar truncation flag for the most-recent `getUiaElements()` call.
+// Changing the return shape to `{ elements, truncated }` would break all
+// external callers (kimi.ts, label-resolver.ts, executor.ts, provider.ipc.ts,
+// computer.ipc.ts) — out of scope for this fix. Callers that care about
+// truncation can read this opportunistically via `wasLastUiaTruncated()`.
+let lastTruncated = false;
+let lastTruncatedAt = 0;
+export function wasLastUiaTruncated(): boolean {
+  return lastTruncated;
+}
+export function lastUiaTruncatedAt(): number {
+  return lastTruncatedAt;
+}
+
 // Script for walking the window directly under a screen point. Used by
 // click-snap so we get the UIA tree of the window the click would land
 // on, regardless of which app currently holds OS foreground. Avoids the
@@ -560,13 +574,18 @@ export async function getUiaElements(): Promise<UiaElement[]> {
       // entries, so the parsed JSON length === cap is a strong signal that
       // the app's tree exceeded our budget. Surface the foreground title
       // (when known) so the user can tell which app caused the slowness.
-      if (arr.length >= UIA_NODE_CAP) {
+      // Also flip the sidecar `lastTruncated` flag so callers can read
+      // it via `wasLastUiaTruncated()` without us changing the return shape.
+      const truncated = arr.length >= UIA_NODE_CAP;
+      lastTruncated = truncated;
+      lastTruncatedAt = Date.now();
+      if (truncated) {
         const title = extractWindowTitle(stderr);
         console.warn(
-          `[optix-timing] uia node cap (${UIA_NODE_CAP}) hit${title ? ` — window: ${title}` : ''}; tree truncated`,
+          `[uia-truncated] node cap ${UIA_NODE_CAP} hit; emitted ${elements.length} elements${title ? ` — window: ${title}` : ''} — downstream snap will only see the partial tree`,
         );
       }
-      console.log(`[optix-timing] uia elements=${elements.length} ms=${ms}`);
+      console.log(`[optix-timing] uia elements=${elements.length} ms=${ms}${truncated ? ' (TRUNCATED)' : ''}`);
       finish(elements);
     });
 

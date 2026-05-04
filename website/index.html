@@ -6,6 +6,25 @@
   <title>AI Teacher Desktop – Cross-Platform Private AI Assistant</title>
   <meta name="description" content="A private, cross-platform AI assistant for Windows, macOS, and Linux, with privacy-first controls and audit-ready reporting." />
 
+  <link rel="canonical" href="https://optix.app/" />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="AI Teacher Desktop — Private, cross-platform AI assistant" />
+  <meta property="og:description" content="A private, cross-platform AI assistant for Windows, macOS, and Linux, with privacy-first controls and audit-ready reporting." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://optix.app/" />
+  <meta property="og:site_name" content="Optix" />
+  <!-- TODO: ship og-image.png (1200x630, ~under 1MB) into /assets and uncomment.
+       Until then social previews fall back to the page title/description. -->
+  <!-- <meta property="og:image" content="https://optix.app/assets/og-image.png" /> -->
+
+  <!-- Twitter / X card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="AI Teacher Desktop — Private, cross-platform AI assistant" />
+  <meta name="twitter:description" content="A private, cross-platform AI assistant for Windows, macOS, and Linux, with privacy-first controls and audit-ready reporting." />
+  <!-- TODO: same og-image.png — uncomment once the asset is added. -->
+  <!-- <meta name="twitter:image" content="https://optix.app/assets/og-image.png" /> -->
+
   <link rel="icon" type="image/svg+xml" href="/assets/icons.svg#app-icon" />
   <link rel="stylesheet" href="/css/style.css" />
   <style>
@@ -79,22 +98,31 @@
       <h2>Download AI Teacher Desktop</h2>
       <p>We ship platform-specific binaries suitable for developers and early adopters. Certificates will be added later.</p>
 
+      <!--
+        Download links point at the GitHub "latest release" redirector so we
+        don't have to bump these URLs on every version bump. The release
+        workflow MUST upload assets named exactly:
+          AI-Teacher-Desktop-win-portable.exe
+          AI-Teacher-Desktop-mac.dmg
+          AI-Teacher-Desktop-linux.AppImage
+        If you rename release artifacts, update the asset filenames below.
+      -->
       <div class="download-grid">
-        <a href="/downloads/ai-teacher-desktop-v0.1.0-win-portable.exe" class="download-card download-win">
+        <a href="https://github.com/you/ai-teacher-desktop/releases/latest/download/AI-Teacher-Desktop-win-portable.exe" class="download-card download-win" target="_blank" rel="noopener noreferrer">
           <span class="platform-logo">💻</span>
           <h3>Windows</h3>
           <p>Portable .exe for Windows. No installer, no registry changes.</p>
           <span class="link-text">Download portable .exe</span>
         </a>
 
-        <a href="/downloads/ai-teacher-desktop-v0.1.0-mac-dmg.dmg" class="download-card download-mac">
+        <a href="https://github.com/you/ai-teacher-desktop/releases/latest/download/AI-Teacher-Desktop-mac.dmg" class="download-card download-mac" target="_blank" rel="noopener noreferrer">
           <span class="platform-logo">🍎</span>
           <h3>macOS</h3>
           <p>Standalone .dmg image for macOS 12+. Drag into Applications.</p>
           <span class="link-text">Download .dmg</span>
         </a>
 
-        <a href="/downloads/ai-teacher-desktop-v0.1.0-linux-appimage.AppImage" class="download-card download-linux">
+        <a href="https://github.com/you/ai-teacher-desktop/releases/latest/download/AI-Teacher-Desktop-linux.AppImage" class="download-card download-linux" target="_blank" rel="noopener noreferrer">
           <span class="platform-logo">🐧</span>
           <h3>Linux</h3>
           <p>Portable .AppImage for most Linux distributions.</p>
@@ -135,7 +163,7 @@
       <p>AI Teacher Desktop © 2026. Built with Electron, Three.js, and a privacy-first mindset.</p>
       <nav class="footer-nav">
         <a href="#privacy">Privacy</a>
-        <a href="https://github.com/you/ai-teacher-desktop" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/you/ai-teacher-desktop" target="_blank" rel="noopener noreferrer">GitHub</a>
       </nav>
     </div>
   </footer>

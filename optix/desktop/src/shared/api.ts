@@ -2,14 +2,14 @@
 // Both renderers (widget + settings) see this identical surface.
 
 import type {
+  ComputerExecuteRequest,
   ComputerLoopAppendRequest,
   ComputerLoopContinueRequest,
   ComputerLoopStartRequest,
   ComputerLoopTurn,
-  ComputerToolAction,
   Conversation,
   ConversationTurn,
-  FileToolAction,
+  FileExecuteRequest,
   HistoryEntry,
   LabelToolAction,
   Mode,
@@ -21,10 +21,12 @@ import type {
   Routine,
   RoutineSummary,
   Settings,
-  ShellToolAction,
+  ShellExecuteRequest,
   StoredPlan,
   TargetRegion,
 } from './schemas';
+
+export type { ComputerExecuteRequest, FileExecuteRequest, ShellExecuteRequest };
 
 export type ActionExecuteRequest = {
   action: ProposedAction;
@@ -177,12 +179,22 @@ export interface OptixApi {
     chooseWorkspaceFolder: () => Promise<string | null>;
     /** Open a native image picker (multi-select). Returns the chosen
      *  images plus any per-file rejection reasons (oversized, wrong
-     *  format) so the UI can surface them. Empty array on cancel. */
+     *  format, read_failed) so the UI can surface them. Errors carry a
+     *  stable `reason` code rather than raw OS messages — no syscall
+     *  text or filesystem paths leak to the renderer. Empty array on
+     *  cancel.
+     *  TODO(renderer): App.tsx#pickImages still does
+     *    `result.errors.join(' \u2022 ')` against the old `string[]`
+     *    shape. Update it to format the structured `{ filename, reason }`
+     *    objects (e.g. "<filename>: too large"). */
     pickImages: () => Promise<
       | []
       | {
           images: Array<{ filename: string; mimeType: string; bytes: Uint8Array }>;
-          errors: string[];
+          errors: Array<{
+            filename: string;
+            reason: 'read_failed' | 'too_large' | 'unsupported_type';
+          }>;
         }
     >;
   };
@@ -220,12 +232,12 @@ export interface OptixApi {
     /** Run a single computer-tool action via the OS executor. */
     execute: (req: ComputerExecuteRequest) => Promise<ComputerExecuteResult>;
     /** Run a single file-system action via the file executor. */
-    executeFile: (req: { action: FileToolAction }) => Promise<FileExecuteResult>;
+    executeFile: (req: FileExecuteRequest) => Promise<FileExecuteResult>;
     /** Run a single label-based action: resolve via UIA, then robotjs. */
     executeLabel: (req: { action: LabelToolAction }) => Promise<ComputerExecuteResult>;
     /** Execute a shell command via the OS shell. Captures stdout/stderr,
      *  enforces a timeout, truncates large outputs from the head. */
-    executeShell: (req: { action: ShellToolAction }) => Promise<ShellExecuteResult>;
+    executeShell: (req: ShellExecuteRequest) => Promise<ShellExecuteResult>;
     /** Resolve the effective cwd for a shell command + report whether it
      *  sits inside the current workspace. Drives gating decisions in the
      *  renderer's runLoop. */
@@ -503,15 +515,8 @@ export type AuditLog = {
   estimatedCostUsd?: number;
 };
 
-export type ComputerExecuteRequest = {
-  action: ComputerToolAction;
-  imageWidth?: number;
-  imageHeight?: number;
-  /** Non-Anthropic providers (Kimi, Gemini) ask the executor to snap
-   *  click coords to the nearest interactive UIA element. Same idea as
-   *  Ask-mode overlay snap, applied to the click action. */
-  snapToUia?: boolean;
-};
+// `ComputerExecuteRequest`, `FileExecuteRequest`, `ShellExecuteRequest`
+// are now zod-inferred — see shared/schemas.ts. Re-exported above.
 export type ComputerExecuteResult =
   | { ok: true; text?: string; noScreenshot?: boolean }
   | { ok: false; error: string };

@@ -16,6 +16,27 @@ function getAnthropicClient(apiKey: string): Anthropic {
   return client;
 }
 
+/**
+ * Drop the cached Anthropic client. Called by the registry's fan-out
+ * after the user changes / deletes their key in settings — without this,
+ * the SDK keeps serving the old key from this map until the app
+ * restarts. Idempotent: a no-op when nothing's cached.
+ *
+ * NOTE on rate-limit behavior: the SDK has its own opaque exponential
+ * backoff. We do NOT currently parse the `Retry-After` header on 429s
+ * (the SDK doesn't surface response headers on errors in a stable
+ * shape). Fallback is the SDK's default backoff. TODO: parse
+ * Retry-After once the SDK exposes headers consistently.
+ *
+ * TODO(models.ts): pricing.ts pins `claude-haiku-4-5` ID, which may
+ * drift from the dated model snapshots used here (e.g.
+ * `claude-haiku-4-5-20251001` in testKey). Reconcile once shared/ is
+ * touchable.
+ */
+export function invalidateClientCache(): void {
+  clientCache.clear();
+}
+
 function bytesToImageBlock(bytes: Uint8Array, mimeType: string | undefined): {
   type: 'image';
   source: { type: 'base64'; media_type: AnthropicImageMediaType; data: string };
@@ -61,6 +82,13 @@ function reportAnthropicUsage(
  * `onChunk` and returning the assembled final message (same shape as
  * `messages.create` returns).
  */
+// Per-stream byte cap. A misbehaving model (or a malicious relay) that
+// streams indefinitely would otherwise force us to accumulate its output
+// until V8 OOMs. Mirrors the cap in kimi.ts but more generous since
+// Anthropic responses can legitimately get larger when web_search
+// surfaces long source excerpts.
+const MAX_STREAMED_BYTES = 20_000_000; // 20 MB
+
 async function streamAndCollect(
   client: Anthropic,
   params: Anthropic.Messages.MessageCreateParamsNonStreaming,
@@ -76,6 +104,7 @@ async function streamAndCollect(
   // final parsed response.
   let firstTextBlockIndex: number | null = null;
   let firstTextBlockClosed = false;
+  let totalBytesStreamed = 0;
   for await (const event of stream) {
     // Detect server-side web search start mid-stream so the renderer can flip
     // its "Searching the web" badge before the response completes.
@@ -123,9 +152,33 @@ async function streamAndCollect(
         continue;
       }
       const text = stripCitations((event as any).delta.text as string);
-      if (text) onChunk?.(text);
+      if (text) {
+        // Hard byte cap — abort the stream rather than letting accumulated
+        // text grow without bound. We track on the post-strip text so the
+        // count reflects what the renderer actually sees.
+        totalBytesStreamed += Buffer.byteLength(text, 'utf8');
+        if (totalBytesStreamed > MAX_STREAMED_BYTES) {
+          stream.controller.abort();
+          throw new Error(
+            'Anthropic response too large (>20 MB streamed) — aborting before exhausting memory.',
+          );
+        }
+        onChunk?.(text);
+      }
     }
   }
+  // NOTE on partial-chunk rollback: when AbortSignal fires mid-stream,
+  // chunks already forwarded via onChunk have already been committed to
+  // the renderer's live preview. Catching `finalMessage()` here would
+  // let us return a `{ aborted, partialText }` shape — but the SDK's
+  // contract is that a thrown AbortError is the canonical signal. Our
+  // upstream provider IPC handler catches the throw and records the
+  // turn as errored without committing to history. Adding a swallow
+  // here would break that path.
+  // TODO(automation/audit.ts or session/history.ts): the history-write
+  // path needs to skip committing partial text on abort. Search for
+  // `record(req, ...)` in src/main/ipc/provider.ipc.ts:480 — that's
+  // the commit point Fix Agent F should review.
   return await stream.finalMessage();
 }
 

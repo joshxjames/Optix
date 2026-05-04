@@ -29,29 +29,75 @@ const RELAY_BASE_URL = 'https://us-central1-optix-22473.cloudfunctions.net/relay
 
 // We re-instantiate the Anthropic client per ID token because tokens
 // rotate every hour and the SDK bakes the auth header in at construction
-// time. The map keys by token so a token in flight reuses the same
+// time. The cache keys by token so a token in flight reuses the same
 // client; new tokens drop their old entries on next access.
-const clientCache = new Map<string, Anthropic>();
+//
+// LRU + TTL guard: a long-lived process that signs in/out repeatedly,
+// or rotates tokens every hour, would otherwise grow this map without
+// bound. We cap at 4 entries (1 in steady state, allows brief overlap
+// during rotation) and stamp each entry with a 90-minute TTL — Firebase
+// ID tokens are valid for 60 minutes, the extra 30 covers clock skew
+// and the SDK's keep-alive window.
+const TOKEN_CACHE_MAX = 4;
+const TOKEN_TTL_MS = 90 * 60 * 1000; // 90 minutes
+type CacheEntry = { client: Anthropic; expiresAt: number };
+// Insertion-ordered Map gives us LRU eviction for free: deleting + re-
+// setting on access moves an entry to the tail; the head is always
+// the least-recently-used.
+const clientCache = new Map<string, CacheEntry>();
 
 function getOptixCloudClient(idToken: string): Anthropic {
-  let client = clientCache.get(idToken);
-  if (!client) {
-    client = new Anthropic({
-      // Explicitly null out apiKey so the SDK's auth resolver picks the
-      // bearer path. Without this, an `ANTHROPIC_API_KEY` env var set
-      // anywhere on the host (even to "") wins over `authToken` and the
-      // request goes out with an empty `X-Api-Key` and no Authorization
-      // — surfaces as "Could not resolve authentication method".
-      apiKey: null,
-      // Sends `Authorization: Bearer <token>` — what the relay's
-      // middleware checks for.
-      authToken: idToken,
-      baseURL: RELAY_BASE_URL,
-      defaultHeaders: { 'anthropic-dangerous-direct-browser-access': 'false' },
-    });
-    clientCache.set(idToken, client);
+  const now = Date.now();
+  const existing = clientCache.get(idToken);
+  if (existing && existing.expiresAt > now) {
+    // Refresh LRU position by re-inserting at the tail.
+    clientCache.delete(idToken);
+    clientCache.set(idToken, existing);
+    return existing.client;
   }
+  if (existing) {
+    // Expired — drop and rebuild.
+    clientCache.delete(idToken);
+  }
+  const client = new Anthropic({
+    // Explicitly null out apiKey so the SDK's auth resolver picks the
+    // bearer path. Without this, an `ANTHROPIC_API_KEY` env var set
+    // anywhere on the host (even to "") wins over `authToken` and the
+    // request goes out with an empty `X-Api-Key` and no Authorization
+    // — surfaces as "Could not resolve authentication method".
+    apiKey: null,
+    // Sends `Authorization: Bearer <token>` — what the relay's
+    // middleware checks for.
+    authToken: idToken,
+    baseURL: RELAY_BASE_URL,
+    defaultHeaders: { 'anthropic-dangerous-direct-browser-access': 'false' },
+  });
+  // Evict the oldest if at capacity. Map iteration is insertion order;
+  // `keys().next().value` is the LRU.
+  if (clientCache.size >= TOKEN_CACHE_MAX) {
+    const oldest = clientCache.keys().next().value;
+    if (oldest !== undefined) clientCache.delete(oldest);
+  }
+  clientCache.set(idToken, { client, expiresAt: now + TOKEN_TTL_MS });
   return client;
+}
+
+/**
+ * Drop the cached Optix Cloud clients. Called by the registry fan-out
+ * after the user signs out or rotates their key — also fired on
+ * settings.setApiKey for consistency even though Optix Cloud doesn't
+ * use a stored API key (sign-out is the equivalent operation).
+ *
+ * NOTE on rate-limit behavior: the relay returns the same 429 shape
+ * the upstream Anthropic API does, which the SDK retries with
+ * exponential backoff. We don't parse `Retry-After` explicitly here —
+ * see anthropic.ts. The relay also returns 429 for billing-exceeded
+ * (`monthly_allowance_exceeded`), which we re-throw as a billing error
+ * via remapToBillingErrorIfPossible — those should NOT be retried by
+ * the SDK and the user-facing flow takes over.
+ */
+export function invalidateClientCache(): void {
+  clientCache.clear();
 }
 
 export const optixCloudProvider: Provider = {
@@ -59,6 +105,8 @@ export const optixCloudProvider: Provider = {
 
   async prompt(input: PromptInput, idToken: string): Promise<ModelResponse> {
     try {
+      // Inherits anthropic.ts's 20 MB per-stream byte cap and abort
+      // handling — same SDK, same `streamAndCollect` path.
       return await runAnthropicPrompt(getOptixCloudClient(idToken), input);
     } catch (err) {
       // The SDK turns 401/402/429 from the relay into typed errors —

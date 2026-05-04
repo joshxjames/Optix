@@ -24,13 +24,15 @@ const SOURCE_TTL_MS = 10 * 60 * 1000;
  * the primary display when no `displayId` is supplied. The no-arg form
  * preserves prior behaviour and uses the cached source.
  *
- * TODO(multi-display): exposing the affordance here is only half the fix —
- * the renderer's `navigator.mediaDevices.getDisplayMedia` flow still routes
- * through `setDisplayMediaRequestHandler` in main/index.ts, which always
- * hands back the primary source. A full multi-display capture path requires
- * (a) the renderer telling main which display the user picked, and (b) the
- * request handler honouring that selection rather than calling the no-arg
- * `getPrimarySource()`. Out of scope here.
+ * TODO(multi-display): the renderer's `navigator.mediaDevices.getDisplayMedia`
+ * flow still routes through `setDisplayMediaRequestHandler` in
+ * main/index.ts:124, which always calls the no-arg form and hands back the
+ * primary source. To finish the fix, that handler needs to look up the
+ * foreground HWND's bounds (no helper exists yet — would need a new
+ * `getForegroundWindowBounds()` next to `captureForegroundHwnd` in
+ * automation/foreground.ts) and pass the matching display id into
+ * `getSourceForDisplay()` below. Cache invalidation on display-changed
+ * events is already wired in index.ts so stale source ids can't persist.
  */
 export async function getPrimarySource(
   displayId?: number,
@@ -86,6 +88,29 @@ export async function getPrimarySource(
 
 export async function getPrimarySourceId(): Promise<string> {
   return (await getPrimarySource()).id;
+}
+
+/**
+ * Resolve a capture source for the display containing the given screen-space
+ * bounds (typically a foreground window's rect). Falls back to the primary
+ * source when the lookup fails, so callers can use this unconditionally
+ * without losing the existing single-display behaviour.
+ *
+ * Bypasses the primary-source cache because the matched display can change
+ * on every call (user dragged the foreground window between monitors).
+ */
+export async function getSourceForDisplay(
+  bounds: { x: number; y: number; width: number; height: number },
+): Promise<DesktopCapturerSource> {
+  try {
+    const display = screen.getDisplayMatching(bounds);
+    return await getPrimarySource(display.id);
+  } catch {
+    // Any lookup failure (no matching display id, getSources rejects) falls
+    // back to the cached primary so capture still works on the wrong display
+    // rather than failing outright.
+    return getPrimarySource();
+  }
 }
 
 export function invalidateSourceIdCache(): void {

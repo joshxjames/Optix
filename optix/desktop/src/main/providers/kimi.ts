@@ -28,6 +28,20 @@ function getKimiClient(apiKey: string): OpenAI {
   return client;
 }
 
+/**
+ * Drop the cached Kimi client. Called by the registry fan-out after
+ * the user changes / deletes their key — without this the SDK keeps
+ * the old key in the pooled HTTP agent until restart.
+ *
+ * NOTE on rate-limit behavior: the OpenAI SDK (which Kimi uses) retries
+ * 429s with default exponential backoff. Headers aren't surfaced
+ * stably, so we don't currently honor `Retry-After` explicitly.
+ * Fallback is the SDK's default backoff.
+ */
+export function invalidateClientCache(): void {
+  clientCache.clear();
+}
+
 export const kimiProvider: Provider = {
   id: 'kimi',
 

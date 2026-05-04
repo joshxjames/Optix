@@ -52,15 +52,49 @@ export type LabelResolution =
       x: number;
       y: number;
       element: UiaElement;
+      /** Identity of the resolved element at the moment of UIA query.
+       *  Captures bounds + name into a single short hash so the caller
+       *  can detect "the element I clicked is no longer the one I
+       *  resolved" — the most common cause of phantom-misclicks
+       *  (resolver fires, page re-flows, click lands on a different
+       *  element by the time robotjs runs). Right now we only emit
+       *  this in the executor log; a future pass can re-query at
+       *  click time and compare. */
+      identity: string;
+      /** Wall-clock time the UIA query returned, in ms since epoch.
+       *  Combined with the executor's pre-click timestamp it tells us
+       *  how stale the resolution was. */
+      resolvedAt: number;
     }
   | {
       ok: false;
       reason: string;
     };
 
+/** Cheap hash of an element's identity — bounds + name. We don't need
+ *  cryptographic strength here, just a value that changes when either
+ *  the element's position or its accessible name does. Hex string keeps
+ *  the log line short. */
+function elementIdentity(el: UiaElement): string {
+  const { x, y, width, height } = el.bounds;
+  const name = el.name ?? '';
+  const ct = el.controlType;
+  let h = 0;
+  const s = `${ct}|${name}|${x},${y},${width},${height}`;
+  for (let i = 0; i < s.length; i++) {
+    h = (h * 31 + s.charCodeAt(i)) | 0;
+  }
+  // Shift into unsigned + base-36 keeps it 6-7 chars typical.
+  return (h >>> 0).toString(36);
+}
+
 /** Find the UIA element best matching `label` and return its center point
  *  in screen pixels. */
 export async function resolveLabelToScreenPoint(label: string): Promise<LabelResolution> {
+  // Capture wall-clock at query start so the caller can measure
+  // resolve→click latency — a high delta is a strong hint that any
+  // misclick was caused by UI re-flow between query and dispatch.
+  const queryStart = Date.now();
   const elements = await getUiaElements();
   if (elements.length === 0) {
     return {
@@ -147,10 +181,23 @@ export async function resolveLabelToScreenPoint(label: string): Promise<LabelRes
   }
 
   const { x, y, width, height } = best.el.bounds;
+  const resolvedAt = Date.now();
+  const identity = elementIdentity(best.el);
+  // Diagnostic: log query latency + the resolved element's identity.
+  // The executor logs again at click time; comparing the two timestamps
+  // tells us how long the gap is in the wild. Once we have data we can
+  // add a re-query-and-compare retry (out of scope for this pass).
+  console.warn(
+    `[optix-label-resolve] label="${label}" → "${best.bestText}" ` +
+      `id=${identity} bounds=(${x},${y},${width},${height}) ` +
+      `query_ms=${resolvedAt - queryStart}`,
+  );
   return {
     ok: true,
     x: Math.round(x + width / 2),
     y: Math.round(y + height / 2),
     element: best.el,
+    identity,
+    resolvedAt,
   };
 }

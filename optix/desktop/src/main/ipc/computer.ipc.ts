@@ -2,13 +2,14 @@ import { ipcMain } from 'electron';
 import { z } from 'zod';
 import { IPC } from '@shared/ipc';
 import {
+  ComputerExecuteRequestSchema,
   ComputerLoopAppendRequestSchema,
   ComputerLoopContinueRequestSchema,
   ComputerLoopStartRequestSchema,
-  ComputerToolActionSchema,
-  FileToolActionSchema,
+  FileExecuteRequestSchema,
   LabelToolActionSchema,
-  ShellToolActionSchema,
+  ShellExecuteRequestSchema,
+  ToolResultSchema,
 } from '@shared/schemas';
 import {
   abortComputerLoop,
@@ -26,23 +27,12 @@ import { getUiaElementsAtPoint } from '@main/capture/uia';
 import { getApiKey } from '@main/security/keychain';
 import { getModelFor, getSettings } from '@main/storage/settings-store';
 
-const ExecuteRequestSchema = z.object({
-  action: ComputerToolActionSchema,
-  imageWidth: z.number().int().positive().optional(),
-  imageHeight: z.number().int().positive().optional(),
-  snapToUia: z.boolean().optional(),
-});
-
-const ExecuteFileRequestSchema = z.object({
-  action: FileToolActionSchema,
-});
-
+// Single-tool execute request shapes now live in shared/schemas.ts so
+// the wire contract is co-located with the action schemas they wrap.
+// Label-execute is the one outlier (no renderer-facing api.ts type
+// distinct from the tool action) so its request stays inline.
 const ExecuteLabelRequestSchema = z.object({
   action: LabelToolActionSchema,
-});
-
-const ExecuteShellRequestSchema = z.object({
-  action: ShellToolActionSchema,
 });
 
 const ScopeCheckRequestSchema = z.object({ path: z.string() });
@@ -94,6 +84,11 @@ export function registerComputerIpc(): void {
 
   ipcMain.handle(IPC.computer.continue, async (_event, raw: unknown) => {
     const req = ComputerLoopContinueRequestSchema.parse(raw);
+    // Belt-and-braces: re-parse `results` against ToolResultSchema so
+    // even if the outer continue schema were ever loosened, malformed
+    // tool-results from a compromised renderer can't slip through to
+    // the loop driver's `as AgentToolResult[]` cast.
+    z.array(ToolResultSchema).parse(req.results);
     return await continueComputerLoop(req);
   });
 
@@ -113,7 +108,7 @@ export function registerComputerIpc(): void {
   });
 
   ipcMain.handle(IPC.computer.execute, async (_event, raw: unknown) => {
-    const req = ExecuteRequestSchema.parse(raw);
+    const req = ComputerExecuteRequestSchema.parse(raw);
     return await executeComputerAction(req.action, {
       imageWidth: req.imageWidth,
       imageHeight: req.imageHeight,
@@ -122,7 +117,7 @@ export function registerComputerIpc(): void {
   });
 
   ipcMain.handle(IPC.computer.executeFile, async (_event, raw: unknown) => {
-    const req = ExecuteFileRequestSchema.parse(raw);
+    const req = FileExecuteRequestSchema.parse(raw);
     return await executeFileAction(req.action);
   });
 
@@ -132,7 +127,7 @@ export function registerComputerIpc(): void {
   });
 
   ipcMain.handle(IPC.computer.executeShell, async (_event, raw: unknown) => {
-    const req = ExecuteShellRequestSchema.parse(raw);
+    const req = ShellExecuteRequestSchema.parse(raw);
     return await executeShellAction(req.action);
   });
 

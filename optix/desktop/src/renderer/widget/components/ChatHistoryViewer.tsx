@@ -13,6 +13,7 @@ import {
 } from './Icons';
 import { formatTimeRange } from './AuditLogViewer';
 import { costForTurn } from '../../../shared/pricing';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 type Props = {
   onClose: () => void;
@@ -61,6 +62,11 @@ function AttachmentThumb({
     let revoked = false;
     let url: string | null = null;
     void window.optix.chatHistory.readAttachment(convId, relPath).then((res) => {
+      // Check the revoked flag synchronously BEFORE allocating the
+      // object URL. If the component unmounted while the IPC was in
+      // flight there's no point creating a URL we'd just leak — the
+      // cleanup already ran and would never get the chance to revoke
+      // anything we put in `url` after this point.
       if (revoked || !res) return;
       // BlobPart wants `Uint8Array<ArrayBuffer>` (ArrayBuffer-backed). Our
       // bytes come from main's `readFile` → `Buffer` → IPC, which always
@@ -86,7 +92,36 @@ export function ChatHistoryViewer({ onClose }: Props) {
   const [view, setView] = useState<View>({ kind: 'loading' });
   const [summaries, setSummaries] = useState<ConversationSummary[]>([]);
 
-  const refresh = async () => {
+  // Mount on initial load. The `cancelled` flag guards against the
+  // user closing the viewer while the list IPC is still pending —
+  // without it, `setSummaries`/`setView` would fire on an unmounted
+  // tree.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const items = await window.optix.chatHistory.list();
+        if (cancelled) return;
+        setSummaries(items);
+        setView({ kind: 'list' });
+      } catch (err) {
+        if (cancelled) return;
+        setView({
+          kind: 'error',
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Manual refresh (post-delete navigation). Doesn't get a cancel
+  // flag because it always runs in response to a user action while
+  // the viewer is still mounted, but the result is still gated by
+  // checking the view kind hasn't moved on.
+  const refresh = async (): Promise<void> => {
     setView({ kind: 'loading' });
     try {
       const items = await window.optix.chatHistory.list();
@@ -99,10 +134,6 @@ export function ChatHistoryViewer({ onClose }: Props) {
       });
     }
   };
-
-  useEffect(() => {
-    void refresh();
-  }, []);
 
   async function openDetail(id: string): Promise<void> {
     setView({ kind: 'loading' });
@@ -141,15 +172,11 @@ export function ChatHistoryViewer({ onClose }: Props) {
     }
   };
 
-  // Modal hygiene: Escape mirrors the back arrow.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') goBack();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, onClose]);
+  // Modal hygiene: Escape mirrors the back arrow. The shared hook
+  // holds `goBack` in a ref so we don't churn the window listener
+  // every time `view` flips — the previous inline implementation
+  // re-bound on every state change.
+  useEscapeKey(goBack);
 
   return (
     <div className="audit chat-history">

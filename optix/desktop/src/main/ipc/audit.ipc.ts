@@ -11,9 +11,16 @@ import {
 } from '@main/automation/audit';
 import { getWidgetWindow } from '@main/windows/widget-window';
 
-const ReadRequest = z.object({ filename: z.string() });
+// Filenames are auto-generated from the loop ID (UUID + ".json"); the
+// downstream audit store guards reads against this same pattern as a
+// defence-in-depth check. We mirror it here at the IPC boundary so
+// path-traversal probes (`../`, NUL bytes, drive letters) are rejected
+// before they ever touch fs APIs.
+const FILENAME_RE = /^[a-zA-Z0-9_\-]+\.json$/;
+const ReadRequest = z.object({ filename: z.string().regex(FILENAME_RE) });
+const DeleteRequest = z.object({ filename: z.string().regex(FILENAME_RE) });
 const ExportRequest = z.object({
-  filename: z.string(),
+  filename: z.string().regex(FILENAME_RE),
   format: z.enum(['json', 'markdown', 'text']),
 });
 
@@ -213,7 +220,7 @@ export function registerAuditIpc(): void {
   });
 
   ipcMain.handle(IPC.audit.delete, async (_e, raw: unknown): Promise<boolean> => {
-    const { filename } = ReadRequest.parse(raw);
+    const { filename } = DeleteRequest.parse(raw);
     return await deleteAuditLog(filename);
   });
 }

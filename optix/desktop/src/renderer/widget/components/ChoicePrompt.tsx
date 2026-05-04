@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { AskUserAction } from '../../../shared/schemas';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 type Props = {
   action: AskUserAction;
@@ -20,9 +21,21 @@ type Props = {
  */
 export function ChoicePrompt({ action, onSubmit }: Props) {
   const [freeform, setFreeform] = useState('');
+  // Focus trap so Tab cycles among the option buttons + freeform
+  // input rather than escaping into the chat surface behind. The
+  // hook also restores the previously-focused element when this
+  // gate unmounts.
+  const containerRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(containerRef);
 
   return (
-    <div className="choice-prompt" role="group" aria-label={action.question}>
+    <div
+      ref={containerRef}
+      className="choice-prompt"
+      role="dialog"
+      aria-modal="true"
+      aria-label={action.question}
+    >
       <div className="choice-prompt__options">
         {action.options.map((opt, i) => (
           <button

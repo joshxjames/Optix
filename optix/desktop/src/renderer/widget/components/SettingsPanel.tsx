@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ProviderId, Settings } from '../../../shared/schemas';
 import { MODELS_BY_PROVIDER, PROVIDER_LABELS } from '../../../shared/models';
 import { AuditLogViewer } from './AuditLogViewer';
 import { ChatHistoryViewer } from './ChatHistoryViewer';
 import { RoutinesViewer } from './RoutinesViewer';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 import {
   cancelSignIn,
   getFreshIdToken,
@@ -15,6 +16,16 @@ import {
   type UsageThisMonth,
   type UserProfile,
 } from '../firebase';
+
+/** Realistic upper bound on an agent cost ceiling — clamps user input
+ *  in case someone pastes `1e10` or holds down a digit. $10k is well
+ *  past any plausible single-task spend; the schema can keep its own
+ *  bound but the UI guards before sending. */
+const COST_CEILING_MAX_USD = 10_000;
+/** Debounce window for the custom-model-id text field. The select
+ *  list fires per keystroke today; for the freeform input we coalesce
+ *  so we don't spam IPC + main on every character. */
+const CUSTOM_MODEL_DEBOUNCE_MS = 300;
 
 const PROVIDER_IDS: ProviderId[] = [
   'anthropic',
@@ -98,6 +109,11 @@ export function SettingsPanel({ settings, onClose }: Props) {
   const [customModel, setCustomModel] = useState('');
   const [status, setStatus] = useState<KeyStatus>({ kind: 'unknown' });
   const [view, setView] = useState<'settings' | 'audit' | 'chat' | 'routines'>('settings');
+  // Local validation message for the cost-ceiling input — shown
+  // inline beneath the field when the user types something that's
+  // out of range or unparseable. We don't block typing, just refuse
+  // to forward the bad value to settings.
+  const [costCeilingError, setCostCeilingError] = useState<string | null>(null);
 
   // Optix Cloud sign-in state. `signedInUser` reflects Firebase auth
   // state directly — null when signed out, populated when signed in.
@@ -120,40 +136,60 @@ export function SettingsPanel({ settings, onClose }: Props) {
 
   // Modal hygiene: Escape closes the panel. Only fires for the root
   // settings view — sub-views (audit/chat/routines) own their own key
-  // handlers and pop back to settings rather than dismissing it.
-  useEffect(() => {
-    if (view !== 'settings') return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [view, onClose]);
+  // handlers and pop back to settings rather than dismissing it. The
+  // shared hook reads `onClose` through a ref so reattaching when
+  // `view` flips is the only re-bind we do.
+  useEscapeKey(onClose, view === 'settings');
 
   // Subscribe to Firebase auth state once. The SDK rehydrates from
   // IndexedDB on mount, so this fires immediately with the persisted
-  // user if any — no need for a separate "check on load" step.
+  // user if any — no need for a separate "check on load" step. The
+  // `cancelled` guard protects against the listener resolving after
+  // unmount (the unsubscribe is synchronous so this is belt-and-
+  // braces, but the auth callback can fire on its own schedule).
   useEffect(() => {
-    return onAuthChanged((user) => {
+    let cancelled = false;
+    const unsub = onAuthChanged((user) => {
+      if (cancelled) return;
       setSignedInUser(user ? { email: user.email } : null);
       // The user just completed sign-in via the email link callback —
       // clear the in-flight UI and let the "Signed in as ..." panel
       // take over.
       if (user) setSignInStatus({ kind: 'idle' });
     });
+    return () => {
+      cancelled = true;
+      unsub();
+    };
   }, []);
 
   // Subscribe to the Firestore user profile (subscription state, tier,
   // allowance). Updates immediately when the Stripe webhook lands.
   useEffect(() => {
-    return onUserProfileChanged(setUserProfile);
+    let cancelled = false;
+    const unsub = onUserProfileChanged((p) => {
+      if (cancelled) return;
+      setUserProfile(p);
+    });
+    return () => {
+      cancelled = true;
+      unsub();
+    };
   }, []);
 
   // Subscribe to the current month's usage counters. Surfaced inline
   // alongside the plan label so the user sees their consumption next
   // to their cap without a separate UI surface.
   useEffect(() => {
-    return onUsageThisMonthChanged(setUsage);
+    let cancelled = false;
+    const unsub = onUsageThisMonthChanged((u) => {
+      if (cancelled) return;
+      setUsage(u);
+    });
+    return () => {
+      cancelled = true;
+      unsub();
+    };
   }, []);
 
   // Listen for the Stripe checkout return-to-loopback. When the URL
@@ -161,7 +197,9 @@ export function SettingsPanel({ settings, onClose }: Props) {
   // Firestore (the profile listener above will flip the UI). Cancel
   // path resets the subscribe-button state so the user can retry.
   useEffect(() => {
-    return window.optix.stripe.onCheckoutCallback((url) => {
+    let cancelled = false;
+    const unsub = window.optix.stripe.onCheckoutCallback((url) => {
+      if (cancelled) return;
       try {
         const path = new URL(url).pathname;
         if (path === '/checkout-success') {
@@ -181,6 +219,10 @@ export function SettingsPanel({ settings, onClose }: Props) {
         // Malformed URL — ignore. The watchdog tears down the loopback.
       }
     });
+    return () => {
+      cancelled = true;
+      unsub();
+    };
   }, []);
 
   // Once the user's subscriptionStatus flips to active and the tier
@@ -195,13 +237,21 @@ export function SettingsPanel({ settings, onClose }: Props) {
     }
   }, [subscribeStatus, userProfile]);
 
-  // Re-check key status whenever the active provider changes.
+  // Re-check key status whenever the active provider changes. The
+  // `cancelled` flag guards against the IPC resolving after either
+  // unmount or a fast provider-flip — without it, the stale
+  // setStatus would clobber the newer check's result.
   useEffect(() => {
+    let cancelled = false;
     setKeyInput('');
     setStatus({ kind: 'unknown' });
     void window.optix.settings.hasApiKey(activeId).then((has) => {
+      if (cancelled) return;
       setStatus({ kind: has ? 'stored' : 'missing' });
     });
+    return () => {
+      cancelled = true;
+    };
   }, [activeId]);
 
   useEffect(() => {
@@ -288,6 +338,26 @@ export function SettingsPanel({ settings, onClose }: Props) {
     void patchSettings({
       modelByProvider: { ...settings.modelByProvider, [activeId]: modelId },
     });
+  }
+
+  // Debounced custom-model write. The freeform text input would
+  // otherwise patch settings (and bounce through IPC) on every
+  // keystroke. We hold the latest value for 300ms before committing,
+  // and reset the timer if the user keeps typing. The timer is also
+  // cleared on provider switch so a partially-typed id for one
+  // provider doesn't leak into another.
+  const customModelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (customModelTimerRef.current) clearTimeout(customModelTimerRef.current);
+    };
+  }, []);
+  function onCustomModelInput(next: string): void {
+    setCustomModel(next);
+    if (customModelTimerRef.current) clearTimeout(customModelTimerRef.current);
+    customModelTimerRef.current = setTimeout(() => {
+      onModelChange(next);
+    }, CUSTOM_MODEL_DEBOUNCE_MS);
   }
 
   if (view === 'audit') {
@@ -397,10 +467,7 @@ export function SettingsPanel({ settings, onClose }: Props) {
                 className="settings-panel__input settings-panel__input--mono"
                 placeholder="provider-specific model id"
                 value={customModel}
-                onChange={(e) => {
-                  setCustomModel(e.target.value);
-                  onModelChange(e.target.value);
-                }}
+                onChange={(e) => onCustomModelInput(e.target.value)}
               />
             )}
           </section>
@@ -537,16 +604,49 @@ export function SettingsPanel({ settings, onClose }: Props) {
               <input
                 type="number"
                 min="0"
+                max={COST_CEILING_MAX_USD}
                 step="0.01"
                 placeholder="No cap"
                 value={settings.agentCostCeilingUsd ?? ''}
                 onChange={(e) => {
+                  // Local validation only — the shared schema owns
+                  // the canonical bounds (Fix Agent B). We refuse to
+                  // forward unparseable / negative / absurdly-large
+                  // values and surface inline feedback instead of
+                  // silently swallowing them.
                   const raw = e.target.value.trim();
-                  const num = raw === '' ? null : Number(raw);
-                  if (num !== null && !Number.isFinite(num)) return;
+                  if (raw === '') {
+                    setCostCeilingError(null);
+                    void patchSettings({ agentCostCeilingUsd: null });
+                    return;
+                  }
+                  const num = Number(raw);
+                  if (!Number.isFinite(num)) {
+                    setCostCeilingError('Enter a number.');
+                    return;
+                  }
+                  if (num < 0) {
+                    setCostCeilingError('Must be zero or greater.');
+                    return;
+                  }
+                  if (num > COST_CEILING_MAX_USD) {
+                    setCostCeilingError(
+                      `Capped at $${COST_CEILING_MAX_USD.toLocaleString()}.`,
+                    );
+                    void patchSettings({
+                      agentCostCeilingUsd: COST_CEILING_MAX_USD,
+                    });
+                    return;
+                  }
+                  setCostCeilingError(null);
                   void patchSettings({ agentCostCeilingUsd: num });
                 }}
               />
+              {costCeilingError && (
+                <span className="settings-panel__status settings-panel__status--error">
+                  {costCeilingError}
+                </span>
+              )}
             </label>
           </div>
         </section>

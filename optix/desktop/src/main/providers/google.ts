@@ -25,6 +25,20 @@ function getGoogleClient(apiKey: string): GoogleGenerativeAI {
   return client;
 }
 
+/**
+ * Drop the cached Google client. Called by the registry fan-out after
+ * the user changes / deletes their key — without this the SDK keeps
+ * the old key embedded until restart.
+ *
+ * NOTE on rate-limit behavior: @google/generative-ai doesn't expose a
+ * stable response-headers shape on errors, so we don't currently parse
+ * `Retry-After`. Fallback is the SDK's default behavior (the SDK
+ * surfaces the API error and we let the caller retry at the IPC layer).
+ */
+export function invalidateClientCache(): void {
+  clientCache.clear();
+}
+
 /** Race the SDK promise against the user's abort signal. */
 function withAbort<T>(signal: AbortSignal, work: Promise<T>): Promise<T> {
   // Pre-check — if the caller already aborted before invoking the SDK,

@@ -171,6 +171,16 @@ export function scoreLabelMatch(
  *    proximity.
  * 5. If best lev <= MAX_LEV_DISTANCE OR ratio >= MIN_FUZZY_RATIO, snap.
  *    Otherwise leave the region unchanged so OCR can have a turn.
+ *
+ * TODO(secondary-display-dpi): the caller at provider.ipc.ts:379 passes
+ * `screen.getPrimaryDisplay().bounds`, which is wrong when the foreground
+ * window — and therefore the captured screenshot — lives on a secondary
+ * display with a different DPI/work-area. The fix belongs at the call site:
+ * derive `displayBounds` from the foreground HWND's screen via
+ * `screen.getDisplayMatching(hwndRect).bounds`, then forward into this
+ * function. UIA bounds are screen-space so the scale ratio
+ * `imageW / displayBounds.width` is only correct for the display the image
+ * came from.
  */
 export function snapRegionsToUia(
   regions: TargetRegion[],
@@ -200,19 +210,48 @@ export function snapRegionsToUia(
     box: { x: number; y: number; width: number; height: number };
     center: { cx: number; cy: number };
   };
-  const candidates: Cand[] = uiaElements.map((el) => {
+  // Track whether any candidate had to be clipped to fit the image — useful
+  // diagnostic when UIA reports a control whose right/bottom edges spill
+  // past the captured frame (multi-monitor mismatches, partial-screen caps).
+  let clippedCount = 0;
+  const candidates: Cand[] = [];
+  for (const el of uiaElements) {
     const x = (el.bounds.x - displayBounds.x) * scaleX;
     const y = (el.bounds.y - displayBounds.y) * scaleY;
     const width = el.bounds.width * scaleX;
     const height = el.bounds.height * scaleY;
+    // Clamp both lower (>= 0) and upper (<= imageW/H) bounds so the returned
+    // region can never exceed the captured screenshot. Without the upper
+    // clamp, a UIA control sitting partway off-screen would emit bbox
+    // coords past imageWidth/imageHeight and downstream cropping would
+    // produce empty / out-of-range slices.
+    const rawX = Math.round(x);
+    const rawY = Math.round(y);
+    const rawW = Math.round(width);
+    const rawH = Math.round(height);
+    const clampedX = Math.max(0, Math.min(imageWidth - 1, rawX));
+    const clampedY = Math.max(0, Math.min(imageHeight - 1, rawY));
+    const clampedRight = Math.max(clampedX + 1, Math.min(imageWidth, rawX + rawW));
+    const clampedBottom = Math.max(clampedY + 1, Math.min(imageHeight, rawY + rawH));
+    const clampedW = clampedRight - clampedX;
+    const clampedH = clampedBottom - clampedY;
+    if (clampedW <= 0 || clampedH <= 0) continue;
+    if (clampedX !== rawX || clampedY !== rawY || clampedW !== rawW || clampedH !== rawH) {
+      clippedCount += 1;
+    }
     const box = {
-      x: Math.max(0, Math.round(x)),
-      y: Math.max(0, Math.round(y)),
-      width: Math.max(1, Math.round(width)),
-      height: Math.max(1, Math.round(height)),
+      x: clampedX,
+      y: clampedY,
+      width: Math.max(1, clampedW),
+      height: Math.max(1, clampedH),
     };
-    return { el, box, center: centerOf(box) };
-  });
+    candidates.push({ el, box, center: centerOf(box) });
+  }
+  if (clippedCount > 0) {
+    console.warn(
+      `[snap-to-uia] clipped ${clippedCount}/${uiaElements.length} UIA bounds to image=${imageWidth}x${imageHeight} (display=${displayBounds.width}x${displayBounds.height})`,
+    );
+  }
 
   const maxDist2 = MAX_CENTER_DIST_PX * MAX_CENTER_DIST_PX;
 

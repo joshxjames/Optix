@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { PlanToolAction } from '../../../shared/schemas';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 type Props = {
   action: PlanToolAction;
@@ -30,6 +31,11 @@ type Props = {
 export function PlanApprovalGate({ action, onDecide }: Props) {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedback, setFeedback] = useState('');
+  // Focus trap keeps Tab cycling between Approve/Deny/feedback inside
+  // the gate so the chat surface behind doesn't grab focus while the
+  // user is making the decision.
+  const containerRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(containerRef);
 
   const submitFeedback = (): void => {
     const text = feedback.trim();
@@ -38,7 +44,13 @@ export function PlanApprovalGate({ action, onDecide }: Props) {
   };
 
   return (
-    <div className="plan-gate" role="group" aria-label="Plan approval">
+    <div
+      ref={containerRef}
+      className="plan-gate"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Plan approval"
+    >
       {action.rationale && (
         <div className="plan-gate__rationale" title="Why this plan changed">
           <em>Note: {action.rationale}</em>

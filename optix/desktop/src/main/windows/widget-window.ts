@@ -1,7 +1,10 @@
 import { BrowserWindow, screen } from 'electron';
+import Store from 'electron-store';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { safeOpenExternal } from '@main/security/safe-url';
+import { getLastRegistrationFailure } from '@main/hotkeys/register';
+import { IPC } from '@shared/ipc';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const preloadPath = path.join(__dirname, '../preload/index.js');
@@ -10,12 +13,70 @@ const WIDGET_WIDTH = 400;
 const WIDGET_HEIGHT = 520;
 const EDGE_GAP = 24;
 
+// Separate electron-store from the shared `settings` store: widget bounds
+// are pure window-state, not user-config, and keeping them out of the
+// Settings schema avoids round-tripping geometry through the renderer's
+// settings IPC. Lazy init for the same reason the settings store is —
+// `app.getPath('userData')` only resolves after `app.whenReady()`.
+type WidgetState = {
+  bounds: { x: number; y: number; width: number; height: number } | null;
+};
+let widgetStateInstance: Store<WidgetState> | null = null;
+function widgetStateStore(): Store<WidgetState> {
+  if (!widgetStateInstance) {
+    widgetStateInstance = new Store<WidgetState>({
+      name: 'widget-state',
+      defaults: { bounds: null },
+      clearInvalidConfig: true,
+    });
+  }
+  return widgetStateInstance;
+}
+
+/**
+ * Pick a startup position for the widget. Prefers persisted bounds if they
+ * still intersect a currently-attached display (handles laptop-undocked /
+ * monitor-disconnected) and otherwise falls back to the bottom-right of
+ * the primary display.
+ */
+function pickStartupBounds(): { x: number; y: number; width: number; height: number } {
+  const saved = widgetStateStore().get('bounds');
+  if (saved) {
+    // Treat the saved bounds as "still valid" if any currently-attached
+    // display contains the saved center point. A pure intersect test
+    // against `display.bounds` would also work but checking the center
+    // matches Electron's own getDisplayMatching heuristic.
+    const cx = saved.x + saved.width / 2;
+    const cy = saved.y + saved.height / 2;
+    const onAttached = screen.getAllDisplays().some((d) => {
+      const b = d.bounds;
+      return cx >= b.x && cx < b.x + b.width && cy >= b.y && cy < b.y + b.height;
+    });
+    if (onAttached) {
+      return { ...saved, width: WIDGET_WIDTH, height: WIDGET_HEIGHT };
+    }
+    // Saved bounds reference a display that's no longer attached —
+    // fall through to the primary-display default below.
+  }
+  const primary = screen.getPrimaryDisplay();
+  return {
+    x: primary.workArea.x + primary.workArea.width - WIDGET_WIDTH - EDGE_GAP,
+    y: primary.workArea.y + primary.workArea.height - WIDGET_HEIGHT - EDGE_GAP,
+    width: WIDGET_WIDTH,
+    height: WIDGET_HEIGHT,
+  };
+}
+
 let widgetWindow: BrowserWindow | null = null;
 
 export function createWidgetWindow(): BrowserWindow {
-  const primary = screen.getPrimaryDisplay();
-  const x = primary.workArea.x + primary.workArea.width - WIDGET_WIDTH - EDGE_GAP;
-  const y = primary.workArea.y + primary.workArea.height - WIDGET_HEIGHT - EDGE_GAP;
+  // Restore last-known position when possible. `pickStartupBounds` falls
+  // back to the primary display's bottom-right when the persisted bounds
+  // reference a display that's no longer attached (laptop-undocked,
+  // monitor unplugged) so the widget can never land off-screen.
+  const startup = pickStartupBounds();
+  const x = startup.x;
+  const y = startup.y;
 
   // Cross-platform note on `alwaysOnTop: true` + `setAlwaysOnTop(.., 'floating')`:
   //   - Windows: DWM honours always-on-top under most full-screen apps,
@@ -78,13 +139,84 @@ export function createWidgetWindow(): BrowserWindow {
     void widgetWindow.loadFile(path.join(__dirname, '../renderer/widget/index.html'));
   }
 
+  // Replay any startup-time hotkey registration failure once the renderer
+  // is alive. registerHotkeys() runs before any window exists (so its
+  // broadcast hits zero listeners), and a silent failure leaves the user
+  // wondering why the hotkey doesn't work. The register module stashes
+  // the offending binding; we replay it as soon as the widget can show
+  // the banner.
+  widgetWindow.webContents.once('did-finish-load', () => {
+    const failedBinding = getLastRegistrationFailure();
+    if (failedBinding && widgetWindow && !widgetWindow.isDestroyed()) {
+      try {
+        widgetWindow.webContents.send(IPC.widget.hotkeyRegistrationFailed, {
+          binding: failedBinding,
+        });
+      } catch {
+        // best-effort — destroyed/closing webContents shouldn't crash startup.
+      }
+    }
+  });
+
 
   // F12 toggles DevTools so main-process logs (timing, errors) and renderer
   // console are inspectable on demand. Dev-only convenience.
-  widgetWindow.webContents.on('before-input-event', (_event, input) => {
-    if (input.type === 'keyDown' && input.key === 'F12') {
-      widgetWindow?.webContents.toggleDevTools();
+  // Gate on ELECTRON_RENDERER_URL — that env var is only set by the dev
+  // harness (see loadURL above), so packaged builds can't accidentally
+  // expose DevTools to end users via an F12 keystroke.
+  if (process.env.ELECTRON_RENDERER_URL) {
+    widgetWindow.webContents.on('before-input-event', (_event, input) => {
+      if (input.type === 'keyDown' && input.key === 'F12') {
+        widgetWindow?.webContents.toggleDevTools();
+      }
+    });
+  }
+
+  // Track which display the widget currently sits on so we can detect
+  // cross-monitor drags and re-anchor when DPI / work-area changes. The
+  // widget is non-resizable (logical px), so Electron handles the visual
+  // DPI rescale automatically on the new display — but the docked
+  // bottom-right anchor needs recomputing against the new work area or
+  // the widget can end up half-off the secondary screen.
+  let currentDisplayId = screen.getDisplayMatching(widgetWindow.getBounds()).id;
+  widgetWindow.on('moved', () => {
+    if (!widgetWindow || widgetWindow.isDestroyed()) return;
+    // Skip while a compact-toggle animation is in flight — those
+    // setBounds calls fire `moved` events and we don't want to fight
+    // the animation.
+    if (compactAnimTimer !== null) return;
+    const bounds = widgetWindow.getBounds();
+    // Persist on every move (cheap — electron-store batches writes) so the
+    // next launch can restore where the user left it. Skip persisting
+    // compact-mode bounds; we want to come back to the full-size widget.
+    if (savedFullHeight === null) {
+      widgetStateStore().set('bounds', bounds);
     }
+    const display = screen.getDisplayMatching(bounds);
+    if (display.id === currentDisplayId) return;
+    currentDisplayId = display.id;
+    // Re-clamp into the new display's work area. If the user dragged the
+    // widget onto a smaller secondary monitor where part of it would
+    // overflow the right/bottom edges, snap it back inside. Don't move
+    // it if it already fits — the user just placed it where they wanted.
+    const wa = display.workArea;
+    const fitsX = bounds.x >= wa.x && bounds.x + bounds.width <= wa.x + wa.width;
+    const fitsY = bounds.y >= wa.y && bounds.y + bounds.height <= wa.y + wa.height;
+    if (fitsX && fitsY) return;
+    const nextX = Math.max(
+      wa.x + EDGE_GAP,
+      Math.min(wa.x + wa.width - bounds.width - EDGE_GAP, bounds.x),
+    );
+    const nextY = Math.max(
+      wa.y + EDGE_GAP,
+      Math.min(wa.y + wa.height - bounds.height - EDGE_GAP, bounds.y),
+    );
+    widgetWindow.setBounds({
+      x: nextX,
+      y: nextY,
+      width: bounds.width,
+      height: bounds.height,
+    });
   });
 
   widgetWindow.once('ready-to-show', () => {
@@ -98,6 +230,19 @@ export function createWidgetWindow(): BrowserWindow {
     // so future Electron versions can't surprise us with new behaviour.
     if (process.platform === 'win32') {
       widgetWindow?.setContentProtection(true);
+    }
+  });
+  widgetWindow.on('close', () => {
+    // Last-chance persistence: if the user closes mid-drag we want the
+    // most-recent bounds saved. Skip when in compact mode for the same
+    // reason as the `moved` handler — restore should come back to the
+    // expanded size.
+    if (widgetWindow && !widgetWindow.isDestroyed() && savedFullHeight === null) {
+      try {
+        widgetStateStore().set('bounds', widgetWindow.getBounds());
+      } catch {
+        // Best-effort — store write failures shouldn't block shutdown.
+      }
     }
   });
   widgetWindow.on('closed', () => {

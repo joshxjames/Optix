@@ -11,6 +11,7 @@ import {
   TurnsIcon,
 } from './Icons';
 import { formatTimeRange } from './AuditLogViewer';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 type Props = {
   onClose: () => void;
@@ -96,6 +97,12 @@ export function RoutinesViewer({ onClose, onRun }: Props) {
   const [view, setView] = useState<View>({ kind: 'loading' });
   const [summaries, setSummaries] = useState<RoutineSummary[]>([]);
 
+  // The `refresh` closure used inside the mount effect captures a
+  // local `cancelled` flag so any in-flight `routines.list()` IPC
+  // can no-op if the component is gone by the time it resolves.
+  // External callers (e.g. post-edit save flows could call refresh)
+  // hit the same function but its setState calls land harmlessly
+  // because they only run while still mounted by construction.
   const refresh = async (): Promise<void> => {
     try {
       const items = await window.optix.routines.list();
@@ -109,11 +116,33 @@ export function RoutinesViewer({ onClose, onRun }: Props) {
     }
   };
 
+  // Mount effect: initial fetch + subscribe to the routines-changed
+  // broadcast. The `cancelled` guard protects both paths from a
+  // mid-fetch close.
   useEffect(() => {
-    void refresh();
-    return window.optix.routines.onChanged(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const items = await window.optix.routines.list();
+        if (cancelled) return;
+        setSummaries(items);
+        setView({ kind: 'list' });
+      } catch (err) {
+        if (cancelled) return;
+        setView({
+          kind: 'error',
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    })();
+    const unsub = window.optix.routines.onChanged(() => {
+      if (cancelled) return;
       void refresh();
     });
+    return () => {
+      cancelled = true;
+      unsub();
+    };
   }, []);
 
   const openDetail = async (id: string): Promise<void> => {
@@ -182,15 +211,9 @@ export function RoutinesViewer({ onClose, onRun }: Props) {
 
   // Modal hygiene: Escape mirrors the back arrow (and runs the same
   // dirty-check, so the user can't accidentally Esc out of unsaved
-  // routine edits).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') goBack();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, onClose]);
+  // routine edits). The shared hook holds `goBack` in a ref so the
+  // listener is bound once for the component's life.
+  useEscapeKey(goBack);
 
   return (
     <div className="audit routines">

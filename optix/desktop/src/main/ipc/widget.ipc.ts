@@ -75,28 +75,40 @@ export function registerWidgetIpc(): void {
 
     const out: Array<{ filename: string; mimeType: string; bytes: Uint8Array }> = [];
     let total = 0;
-    const errors: string[] = [];
+    // Structured per-file rejection — never includes raw paths or syscall
+    // text. The renderer renders a friendly message off the `reason` code;
+    // raw errors are only logged main-side for diagnosis.
+    const errors: Array<{
+      filename: string;
+      reason: 'read_failed' | 'too_large' | 'unsupported_type';
+    }> = [];
     for (const fp of result.filePaths) {
       const filename = path.basename(fp);
       const mimeType = mimeFromExt(fp);
       if (!mimeType || !ALLOWED_MIME.has(mimeType)) {
-        errors.push(`${filename}: unsupported format`);
+        errors.push({ filename, reason: 'unsupported_type' });
         continue;
       }
       try {
         const buf = await readFile(fp);
         if (buf.byteLength > MAX_PER_FILE_BYTES) {
-          errors.push(`${filename}: exceeds 10 MB`);
+          errors.push({ filename, reason: 'too_large' });
           continue;
         }
         if (total + buf.byteLength > MAX_TOTAL_BYTES) {
-          errors.push(`${filename}: total attachments would exceed 20 MB`);
+          errors.push({ filename, reason: 'too_large' });
           continue;
         }
         total += buf.byteLength;
         out.push({ filename, mimeType, bytes: new Uint8Array(buf) });
       } catch (err) {
-        errors.push(`${filename}: ${err instanceof Error ? err.message : String(err)}`);
+        // OS paths and syscall details (EACCES, EPERM, etc.) leak the
+        // user's filesystem layout — log internally, return a generic
+        // shape to the renderer.
+        console.warn(
+          `[optix-widget] pickImages read failed for "${fp}": ${err instanceof Error ? err.message : String(err)}`,
+        );
+        errors.push({ filename, reason: 'read_failed' });
       }
     }
     return { images: out, errors };
