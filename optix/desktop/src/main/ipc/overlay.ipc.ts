@@ -8,18 +8,48 @@ import { showOverlay, hideOverlay } from '@main/windows/overlay-window';
 // the rest of the app uses. Caps `regions` at a generous-but-bounded
 // length so a buggy or compromised renderer can't push thousands of
 // rectangles through to the overlay paint loop.
-const OverlayShowRequestSchema = z.object({
-  regions: z.array(TargetRegionSchema).max(64),
-  imageWidth: z.number().int().positive().max(10_000),
-  imageHeight: z.number().int().positive().max(10_000),
-});
+//
+// `superRefine` rejects regions that overflow the image bounds — a
+// model occasionally returns x+width > imageWidth (or y+height >
+// imageHeight) which would render boxes off the edge of the screen
+// and confuse the overlay's coord transform. We log and reject the
+// whole show request so the caller knows something's wrong rather
+// than silently clipping.
+const OverlayShowRequestSchema = z
+  .object({
+    regions: z.array(TargetRegionSchema).max(64),
+    imageWidth: z.number().int().positive().max(10_000),
+    imageHeight: z.number().int().positive().max(10_000),
+  })
+  .superRefine((req, ctx) => {
+    for (let i = 0; i < req.regions.length; i++) {
+      const r = req.regions[i]!;
+      if (r.x + r.width > req.imageWidth || r.y + r.height > req.imageHeight) {
+        console.warn(
+          '[overlay.ipc] rejecting show request: region overflows image bounds',
+          {
+            index: i,
+            label: r.label,
+            region: { x: r.x, y: r.y, width: r.width, height: r.height },
+            image: { width: req.imageWidth, height: req.imageHeight },
+          },
+        );
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['regions', i],
+          message: `Region overflows image bounds: ${r.x}+${r.width} > ${req.imageWidth} or ${r.y}+${r.height} > ${req.imageHeight}`,
+        });
+      }
+    }
+  });
 
 export function registerOverlayIpc(): void {
   ipcMain.handle(IPC.overlay.show, async (_event, raw: unknown) => {
     const req = OverlayShowRequestSchema.parse(raw);
     // Display dimensions are resolved here in main rather than the widget so
-    // the overlay renderer always gets the authoritative primary-display
-    // size — the widget's own DOM viewport doesn't reflect the full screen.
+    // the overlay renderer always gets an authoritative size. `showOverlay`
+    // may override these when the regions span multiple displays — these
+    // values are the single-display fallback the type contract requires.
     const { width: displayWidth, height: displayHeight } =
       screen.getPrimaryDisplay().bounds;
     await showOverlay({

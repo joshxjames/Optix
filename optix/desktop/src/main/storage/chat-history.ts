@@ -20,7 +20,26 @@ import { costForTurns } from '@shared/pricing';
 // crash mid-task still leaves a usable record. Mirrors the audit log
 // pattern (see automation/audit.ts) but with binary attachment storage.
 
+// In-memory cache with a soft FIFO cap — the Map's iteration order is
+// insertion order, so the oldest entry is always `keys().next()`.
+// Without this, a long-lived process that opened thousands of past
+// conversations would hold every turn array in RAM forever. 50 is a
+// loose ceiling that comfortably covers a normal session's context
+// without growing without bound.
+const CONVERSATION_CACHE_CAP = 50;
 const conversations = new Map<string, Conversation>();
+
+function cacheConversation(conv: Conversation): void {
+  // Refresh recency by re-inserting — Map keys move to the end on
+  // delete + set, giving us a simple LRU on writes.
+  if (conversations.has(conv.id)) conversations.delete(conv.id);
+  conversations.set(conv.id, conv);
+  while (conversations.size > CONVERSATION_CACHE_CAP) {
+    const oldest = conversations.keys().next().value;
+    if (oldest === undefined) break;
+    conversations.delete(oldest);
+  }
+}
 
 function getConversationsDir(): string {
   return path.join(app.getPath('userData'), 'conversations');
@@ -61,7 +80,7 @@ export function startConversation(opts: {
     modelId: opts.modelId,
     turns: [],
   };
-  conversations.set(conv.id, conv);
+  cacheConversation(conv);
   void persist(conv);
   return conv;
 }
@@ -229,66 +248,143 @@ export type ConversationSummary = {
   estimatedCostUsd?: number;
 };
 
+export type ListConversationsOptions = {
+  /** Page size; defaults to 100 and is hard-capped at 500 so a
+   *  malicious/buggy renderer can't request "give me everything" and
+   *  OOM main on a directory of thousands of conversations. */
+  limit?: number;
+  /** 0-based offset into the directory listing, sorted newest-first by
+   *  filename. The renderer paginates by passing the previous call's
+   *  `nextCursor` back. */
+  cursor?: number;
+};
+
+export type ListConversationsResult = {
+  items: ConversationSummary[];
+  hasMore: boolean;
+  nextCursor: number;
+};
+
+const DEFAULT_LIST_LIMIT = 100;
+const MAX_LIST_LIMIT = 500;
+// Cap concurrent file reads — `Promise.all` over the whole entries
+// array would open thousands of file descriptors at once on a busy
+// install. 20 is a balance between throughput and FD pressure.
+const LIST_READ_CONCURRENCY = 20;
+
 /**
- * List all persisted conversations newest-first, returning lightweight
+ * List persisted conversations newest-first, returning lightweight
  * summaries for the viewer's list pane. Each entry is one parsed JSON
  * file — the metadata read is cheap; we don't load attachment bytes.
+ *
+ * Paginated to avoid OOMing on installs with thousands of
+ * conversations. Existing callers that pass nothing get the first
+ * page (100 items). Sort uses `id` as a tiebreaker so a clock skew
+ * or bulk-import collision doesn't produce non-deterministic order
+ * across calls.
  */
-export async function listConversations(): Promise<ConversationSummary[]> {
+export async function listConversations(
+  options: ListConversationsOptions = {},
+): Promise<ListConversationsResult> {
+  const limit = Math.min(
+    Math.max(1, Math.floor(options.limit ?? DEFAULT_LIST_LIMIT)),
+    MAX_LIST_LIMIT,
+  );
+  const cursor = Math.max(0, Math.floor(options.cursor ?? 0));
   const dir = getConversationsDir();
   let entries: string[];
   try {
     entries = await readdir(dir);
   } catch {
-    return [];
+    return { items: [], hasMore: false, nextCursor: cursor };
   }
-  const summaries = await Promise.all(
-    entries.map(async (name): Promise<ConversationSummary | null> => {
-      const file = path.join(dir, name, 'conversation.json');
-      try {
-        const raw = await readFile(file, 'utf8');
-        // Validate the on-disk shape before iterating — a corrupt or
-        // hand-edited conversation.json shouldn't be able to crash
-        // the list view by coercing past the TS cast. `safeParse`
-        // returns the parsed object with extras stripped, or null.
-        const parsed = ConversationSchema.safeParse(JSON.parse(raw));
-        if (!parsed.success) return null;
-        const conv = parsed.data;
-        const screenshotCount = conv.turns.filter(
-          (t) => t.capturePath !== undefined,
-        ).length;
-        // Per-turn cost — each turn carries its own model id (mixed-
-        // provider conversations are possible) and falls back to the
-        // conversation-level model when missing. Summary value is
-        // undefined when nothing has usage (legacy data).
-        const anyUsage = conv.turns.some((t) => t.usage !== undefined);
-        const estimatedCostUsd = anyUsage
-          ? costForTurns(
-              conv.turns.map((t) => ({
-                modelId: t.modelId ?? conv.modelId,
-                usage: t.usage,
-              })),
-            )
-          : undefined;
-        return {
-          id: conv.id,
-          startedAt: conv.startedAt,
-          endedAt: conv.endedAt,
-          title: conv.title,
-          providerId: conv.providerId,
-          modelId: conv.modelId,
-          turnCount: conv.turns.length,
-          screenshotCount,
-          estimatedCostUsd,
-        };
-      } catch {
-        return null;
-      }
-    }),
-  );
-  return summaries
+  // Sort by directory name descending — names are UUIDs assigned at
+  // start time, so this isn't strictly newest-first, but it gives a
+  // stable order to slice into pages before the expensive per-file
+  // reads. We still re-sort the parsed page by `startedAt` below for
+  // the actual newest-first display ordering.
+  entries.sort((a, b) => b.localeCompare(a));
+  const slice = entries.slice(cursor, cursor + limit);
+
+  // Chunked Promise.all — limit FD pressure on installs with many
+  // conversations. Reads one window of `LIST_READ_CONCURRENCY` files
+  // at a time, gathers their summaries, and concatenates.
+  const summaries: Array<ConversationSummary | null> = [];
+  for (let i = 0; i < slice.length; i += LIST_READ_CONCURRENCY) {
+    const chunk = slice.slice(i, i + LIST_READ_CONCURRENCY);
+    const results = await Promise.all(
+      chunk.map(async (name): Promise<ConversationSummary | null> => {
+        const file = path.join(dir, name, 'conversation.json');
+        try {
+          const raw = await readFile(file, 'utf8');
+          // Validate the on-disk shape before iterating — a corrupt or
+          // hand-edited conversation.json shouldn't be able to crash
+          // the list view by coercing past the TS cast. `safeParse`
+          // returns the parsed object with extras stripped, or null.
+          const parsed = ConversationSchema.safeParse(JSON.parse(raw));
+          if (!parsed.success) {
+            // Breadcrumb for "my conversation disappeared" reports.
+            console.warn(
+              `[optix-chat] corrupt conversation ${name}:`,
+              parsed.error.message,
+            );
+            return null;
+          }
+          const conv = parsed.data;
+          const screenshotCount = conv.turns.filter(
+            (t) => t.capturePath !== undefined,
+          ).length;
+          // Per-turn cost — each turn carries its own model id (mixed-
+          // provider conversations are possible) and falls back to the
+          // conversation-level model when missing. Summary value is
+          // undefined when nothing has usage (legacy data).
+          const anyUsage = conv.turns.some((t) => t.usage !== undefined);
+          const estimatedCostUsd = anyUsage
+            ? costForTurns(
+                conv.turns.map((t) => ({
+                  modelId: t.modelId ?? conv.modelId,
+                  usage: t.usage,
+                })),
+              )
+            : undefined;
+          return {
+            id: conv.id,
+            startedAt: conv.startedAt,
+            endedAt: conv.endedAt,
+            title: conv.title,
+            providerId: conv.providerId,
+            modelId: conv.modelId,
+            turnCount: conv.turns.length,
+            screenshotCount,
+            estimatedCostUsd,
+          };
+        } catch (err) {
+          console.warn(
+            `[optix-chat] corrupt conversation ${name}:`,
+            err instanceof Error ? err.message : err,
+          );
+          return null;
+        }
+      }),
+    );
+    for (const r of results) summaries.push(r);
+  }
+  const items = summaries
     .filter((s): s is ConversationSummary => s !== null)
-    .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+    // Tiebreaker on `id` — two conversations with identical
+    // `startedAt` (clock skew, system-time reset) would otherwise
+    // shuffle order between calls. `localeCompare` on the UUID gives
+    // a stable, deterministic order.
+    .sort((a, b) => {
+      const byTime = b.startedAt.localeCompare(a.startedAt);
+      if (byTime !== 0) return byTime;
+      return b.id.localeCompare(a.id);
+    });
+  return {
+    items,
+    hasMore: slice.length === limit && cursor + slice.length < entries.length,
+    nextCursor: cursor + slice.length,
+  };
 }
 
 /**
@@ -306,8 +402,25 @@ export async function readConversation(convId: string): Promise<Conversation | n
     // Same validation as `listConversations` — protect the renderer
     // from a corrupt file shaping unexpected data into the UI.
     const parsed = ConversationSchema.safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : null;
-  } catch {
+    if (parsed.success) return parsed.data;
+    // Breadcrumb for the same "my conversation disappeared" path the
+    // list endpoint logs.
+    console.warn(
+      `[optix-chat] corrupt conversation ${convId}:`,
+      parsed.error.message,
+    );
+    return null;
+  } catch (err) {
+    // ENOENT is a normal "doesn't exist" — only log when the read
+    // failed for some other reason (permission, malformed JSON,
+    // disk error) so a missing file isn't noisy.
+    const code = (err as NodeJS.ErrnoException | undefined)?.code;
+    if (code !== 'ENOENT') {
+      console.warn(
+        `[optix-chat] corrupt conversation ${convId}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
     return null;
   }
 }

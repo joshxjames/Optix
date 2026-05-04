@@ -13,10 +13,15 @@ process.stderr.on('error', (err) => {
 });
 process.on('uncaughtException', (err) => {
   if ((err as NodeJS.ErrnoException).code === 'EPIPE') return;
-  throw err;
+  // Last-resort handler — specific catches still belong at call sites.
+  // Without this, Electron pops a bare crash dialog and exits with no
+  // breadcrumb; logging first means a user investigating "why did
+  // Optix vanish?" has something to grep for in the console.
+  console.error('[optix] uncaught exception:', err);
+  process.exit(1);
 });
 import { getPrimarySource, invalidateSourceIdCache } from '@main/capture/screen';
-import { getWorker as getOcrWorker } from '@main/capture/ocr';
+import { getWorker as getOcrWorker, terminateOcrWorker } from '@main/capture/ocr';
 import { registerProviderIpc } from '@main/ipc/provider.ipc';
 import { registerSettingsIpc } from '@main/ipc/settings.ipc';
 import { registerHistoryIpc } from '@main/ipc/history.ipc';
@@ -35,11 +40,16 @@ import { stopLoopbackServer } from '@main/auth/loopback-server';
 import { registerHotkeys, unregisterHotkeys } from '@main/hotkeys/register';
 import { getSettings, setSettings } from '@main/storage/settings-store';
 import { finalizeAllPendingLoops } from '@main/automation/computer-loop';
+import { reapAllShellChildren } from '@main/automation/shell-executor';
 
 // Single-instance lock: second launch focuses the existing widget instead of
 // opening a second app.
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
+  // Log before exiting — silent quit was a debugging dead-end for
+  // users wondering "why won't Optix open?". A console breadcrumb is
+  // less intrusive than a dialog but still leaves a trail.
+  console.warn('[optix] another instance is already running — exiting');
   app.quit();
 }
 
@@ -54,11 +64,33 @@ app.on('second-instance', () => {
 // JSON on disk without `endedAt` / `outcome` / cost — i.e. permanently
 // "in-progress" in the run-history view. Synchronous so it completes
 // before Electron tears down the process.
+//
+// Each cleanup is wrapped individually so an early failure (e.g. audit
+// write fails on a full disk) doesn't skip later cleanup (loopback
+// socket leak, OCR worker stranded, orphaned shell children).
 app.on('before-quit', () => {
-  finalizeAllPendingLoops();
-  // Tear down any in-flight magic-link loopback server so we don't
-  // leak a listening socket past process exit.
-  stopLoopbackServer();
+  try {
+    finalizeAllPendingLoops();
+  } catch (err) {
+    console.error('[optix] loop finalize failed:', err);
+  }
+  try {
+    // Tear down any in-flight magic-link loopback server so we don't
+    // leak a listening socket past process exit.
+    stopLoopbackServer();
+  } catch (err) {
+    console.error('[optix] loopback stop failed:', err);
+  }
+  try {
+    terminateOcrWorker();
+  } catch (err) {
+    console.error('[optix] ocr worker terminate failed:', err);
+  }
+  try {
+    reapAllShellChildren();
+  } catch (err) {
+    console.error('[optix] shell reaper failed:', err);
+  }
 });
 
 app.whenReady().then(() => {

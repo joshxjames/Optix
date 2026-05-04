@@ -2,8 +2,19 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://icons.duckduckgo.com;" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-kiD7SEmKoq8eNnT1lCF6J0YpgzdTwV4glpfWtzkM8Yg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://icons.duckduckgo.com;" />
     <title>Optix</title>
+    <!--
+      Boot-cache theme primer. Reads `optix-theme` from localStorage and
+      tags the document root BEFORE the React bundle parses, so first
+      paint matches the user's last-selected theme instead of flashing
+      dark-then-light. Settings (persisted via IPC) remains the source
+      of truth — App.tsx mirrors the chosen theme back into localStorage
+      so the next boot has the latest value cached. Whitelisted in the
+      CSP above by sha256 hash; if you edit this script the hash must
+      be regenerated.
+    -->
+    <script>try{var t=localStorage.getItem('optix-theme')||'dark';if(t==='light')document.documentElement.dataset.theme='light';}catch(e){}</script>
   </head>
   <body>
     <div id="root"></div>

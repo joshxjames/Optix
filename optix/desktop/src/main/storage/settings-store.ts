@@ -20,6 +20,13 @@ const defaults: Settings = {
 // Lazy-init: `new Store()` resolves `app.getPath('userData')` eagerly, which
 // is only safe once `app.whenReady()` has fired. We delay construction until
 // the first read.
+//
+// Race-safety: this function is fully synchronous between the null check
+// and the assignment — no `await`, no microtask boundary — so JS's single-
+// threaded execution model guarantees two callers can't both pass the
+// null check before either assigns. Keep it that way; introducing an
+// `await` here would let two parallel async paths each instantiate
+// `new Store()` and the second's writes would race the first's.
 let storeInstance: Store<Settings> | null = null;
 
 function store(): Store<Settings> {

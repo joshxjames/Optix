@@ -7,8 +7,17 @@ export function App(): JSX.Element | null {
   const [payload, setPayload] = useState<OverlayRenderPayload | null>(null);
 
   useEffect(() => {
+    // Wrap the callback body so a thrown exception inside setPayload
+    // (or any future logic we add here) doesn't propagate up through
+    // the IPC dispatcher — that path tears down the listener and
+    // leaves the overlay deaf to subsequent renders. Catching here
+    // keeps the unsubscribe handle valid and the listener alive.
     const unsubscribe = window.optix.overlay.onRender((next) => {
-      setPayload(next ?? null);
+      try {
+        setPayload(next ?? null);
+      } catch (err) {
+        console.error('[optix-overlay] onRender handler threw:', err);
+      }
     });
     return () => {
       unsubscribe();

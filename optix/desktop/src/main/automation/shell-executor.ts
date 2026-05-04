@@ -17,7 +17,7 @@
 //    based on cwd-vs-workspace; this executor just runs what it's
 //    told.
 
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
@@ -26,6 +26,13 @@ import { getSettings } from '@main/storage/settings-store';
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 const OUTPUT_BYTE_CAP = 16 * 1024;
+
+// Track every live shell child for the app lifetime so `before-quit`
+// can SIGKILL the lot — without this, quitting mid-task leaves the
+// children orphaned (e.g. a long `npm test` keeps running headless
+// after the widget closes). The set is keyed by ChildProcess identity
+// so adds/removes cost O(1) and double-removes are no-ops.
+const activeShellChildren = new Set<ChildProcess>();
 
 export type ShellExecuteResult =
   | { ok: true; output: string; exitCode: number }
@@ -108,6 +115,13 @@ export async function executeShellAction(
       return;
     }
 
+    // Add to the lifetime registry BEFORE attaching `close` — a
+    // fast-exiting child could fire `close` synchronously (in
+    // theory), and we'd otherwise try to remove an entry that was
+    // never added. Set.delete() of a missing entry is a no-op, so
+    // the worst case here is harmless.
+    activeShellChildren.add(child);
+
     const timer = setTimeout(() => {
       // Graceful kill: SIGTERM first so the child can flush + clean
       // up, then SIGKILL after 500ms if still alive. Without the
@@ -145,6 +159,7 @@ export async function executeShellAction(
     });
     child.on('error', (err) => {
       clearTimeout(timer);
+      activeShellChildren.delete(child);
       finish({
         ok: false,
         error: `Shell error: ${err.message}`,
@@ -153,6 +168,7 @@ export async function executeShellAction(
     });
     child.on('close', (code) => {
       clearTimeout(timer);
+      activeShellChildren.delete(child);
       const output = assembleOutput(chunks, totalBytes, droppedBytes);
       const exitCode = typeof code === 'number' ? code : -1;
       if (exitCode === 0) {
@@ -167,6 +183,23 @@ export async function executeShellAction(
       }
     });
   });
+}
+
+/** Best-effort SIGKILL of every tracked shell child. Called from the
+ *  `before-quit` hook so quitting mid-task doesn't leave orphaned
+ *  build/test processes running headless. We swallow per-child kill
+ *  failures — at this point the process is exiting and there's
+ *  nowhere to report the error. The set is cleared after iteration
+ *  even if individual kills throw. */
+export function reapAllShellChildren(): void {
+  for (const child of activeShellChildren) {
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      /* ignore — best-effort shutdown */
+    }
+  }
+  activeShellChildren.clear();
 }
 
 /** Glue chunks into one string. If the total exceeds the cap, keep

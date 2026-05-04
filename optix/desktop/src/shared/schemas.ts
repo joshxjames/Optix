@@ -691,7 +691,16 @@ export const SettingsSchema = z.object({
    * `null` means no scope — every FS action follows the approval mode
    * normally.
    */
-  agentWorkspaceFolder: z.string().nullable().default(null),
+  // Empty / whitespace-only strings coerce to `null` — the field's
+  // semantic intent is "no scope" rather than "scope set to the empty
+  // string". Without this, a settings UI that posts `''` on clear
+  // would leave a sentinel value that downstream `agentWorkspaceFolder
+  // === null` checks miss, treating every path as in-workspace.
+  agentWorkspaceFolder: z
+    .string()
+    .nullable()
+    .default(null)
+    .transform((v) => (typeof v === 'string' && v.trim() === '' ? null : v)),
   /**
    * When true, prompts are stitched into an ongoing conversation: each
    * new prompt sends the prior turns as context, and the response area

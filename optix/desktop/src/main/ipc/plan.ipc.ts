@@ -33,6 +33,17 @@ function broadcastPlanChanged(plan: StoredPlan | null): void {
 export function registerPlanIpc(): void {
   ipcMain.handle(IPC.plan.read, async () => readPlan());
 
+  // Failure-signal contract — `plan.save` deliberately does NOT catch
+  // disk-write errors. The renderer's plan-tool dispatch calls this
+  // IPC and forwards the result back to the agent as `ok: true` /
+  // `ok: false`. Swallowing the error here would let the agent
+  // believe the plan persisted when in fact the file write blew up
+  // (disk full, permission denied, antivirus quarantine), and the
+  // next turn would see a stale or missing plan with no breadcrumb
+  // to explain why. Letting the rejection propagate through IPC
+  // means the renderer's `await window.optix.plan.save(...)` rejects,
+  // its catch block returns `ok: false`, and the agent learns to
+  // retry or ask the user.
   ipcMain.handle(IPC.plan.save, async (_evt, raw: unknown) => {
     const arg = SavePlanRequestSchema.parse(raw);
     const plan = await savePlan(arg);

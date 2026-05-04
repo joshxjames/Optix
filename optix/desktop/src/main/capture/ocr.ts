@@ -104,3 +104,23 @@ export async function disposeOcrWorker(): Promise<void> {
     workerPromise = null;
   }
 }
+
+/** Synchronous-fire shutdown hook for the `before-quit` chain. We
+ *  can't `await` the worker promise here (the process is exiting),
+ *  so we kick off `terminate()` fire-and-forget and immediately drop
+ *  the cache. The worker holds a WASM runtime + ~10MB of language
+ *  data; leaving it un-terminated risks a dangling worker thread
+ *  past process exit. Best-effort — every failure mode (already
+ *  rejected promise, terminate throws) is swallowed. */
+export function terminateOcrWorker(): void {
+  if (!workerPromise) return;
+  const cached = workerPromise;
+  workerPromise = null;
+  // Fire-and-forget: we don't block shutdown waiting for the WASM
+  // teardown to land.
+  void cached
+    .then((w) => w.terminate())
+    .catch(() => {
+      /* ignore — best-effort shutdown */
+    });
+}

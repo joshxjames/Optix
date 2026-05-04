@@ -98,6 +98,12 @@ let stdoutBuffer = '';
 
 function ensureChild(): ChildProcessWithoutNullStreams {
   if (child && !child.killed) return child;
+  // No `detached: true` — the default attaches the child to the
+  // parent's job/process group on both Windows and POSIX, so when
+  // Electron exits the PowerShell host is torn down with it. That
+  // makes a `before-quit` reaper redundant for the happy path; we
+  // still expose `terminateForegroundChild` below as belt-and-braces
+  // for the unhappy path where someone calls it explicitly.
   const proc = spawn(
     'powershell.exe',
     ['-NoProfile', '-NonInteractive', '-NoLogo', '-Command', '-'],

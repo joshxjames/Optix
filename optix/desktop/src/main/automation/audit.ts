@@ -112,7 +112,12 @@ function fileNameFor(log: AuditLog): string {
 // nothing besides occupying a few KB until the directory is cleared.
 
 /** Synchronous persist — used from `before-quit` where the process is
- *  about to exit and async writes wouldn't flush in time. Best-effort. */
+ *  about to exit and async writes wouldn't flush in time. Best-effort:
+ *  every step (mkdirSync, writeFileSync, renameSync) can fail at quit
+ *  time (disk full, permissions, antivirus locking the tmp file), and
+ *  we'd rather lose the audit than block process exit. The outer
+ *  `before-quit` handler also catches, but defending here means audit
+ *  shutdown stays best-effort regardless of where it's called from. */
 function persistSync(log: AuditLog): void {
   try {
     const dir = getAuditDir();
@@ -122,7 +127,7 @@ function persistSync(log: AuditLog): void {
     writeFileSync(tmp, JSON.stringify(log, null, 2), 'utf8');
     renameSync(tmp, target);
   } catch (err) {
-    console.warn(
+    console.error(
       '[optix-audit] sync persist failed:',
       err instanceof Error ? err.message : err,
     );

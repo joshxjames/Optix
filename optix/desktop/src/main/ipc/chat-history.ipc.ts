@@ -73,12 +73,17 @@ const AppendTurnRequestSchema = z.object({
 
 const IdRequestSchema = z.object({ id: z.string() });
 
-// Explicit empty schema for handlers that take no args. Parsing the
-// raw payload through `z.object({}).strict()` rejects any extra fields
-// the renderer might pass — without this, future additions of args
-// to the renderer side could silently bypass validation if the main
-// handler isn't updated in lockstep.
-const EmptyRequestSchema = z.object({}).strict();
+// Optional pagination for the list endpoint — kept BACKWARD compatible
+// so existing renderer callers passing nothing get the first page
+// (default 100). 500 is a hard ceiling enforced both here and in the
+// storage layer to keep a buggy/compromised renderer from asking for
+// "everything" on a directory of thousands of conversations.
+const ListRequestSchema = z
+  .object({
+    limit: z.number().int().positive().max(500).optional(),
+    cursor: z.number().int().nonnegative().optional(),
+  })
+  .strict();
 
 const ReadAttachmentRequestSchema = z.object({
   convId: z.string(),
@@ -97,8 +102,16 @@ export function registerChatHistoryIpc(): void {
   });
 
   ipcMain.handle(IPC.chatHistory.list, async (_event, raw: unknown) => {
-    EmptyRequestSchema.parse(raw ?? {});
-    return await listConversations();
+    const req = ListRequestSchema.parse(raw ?? {});
+    // Wire shape stays a bare array of summaries for backward compat
+    // with existing renderer callers (`window.optix.chatHistory.list()`
+    // → `ConversationSummary[]`). The storage layer is paginated and
+    // bounded under the hood — default 100 per call, hard cap 500 —
+    // so a directory of thousands of conversations can no longer OOM
+    // main on a single read. When the renderer grows a paginated UI,
+    // a separate listPage IPC can expose `hasMore` + `nextCursor`.
+    const result = await listConversations(req);
+    return result.items;
   });
 
   ipcMain.handle(IPC.chatHistory.read, async (_event, raw: unknown) => {

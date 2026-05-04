@@ -35,15 +35,38 @@ export type ActionExecuteRequest = {
 
 export type ActionExecuteResult = { ok: true } | { ok: false; error: string };
 
-/** Payload sent from main → overlay renderer with regions to draw. */
+/** Payload sent from main → overlay renderer with regions to draw.
+ *  `null` is a sentinel meaning "clear all state" — sent on hide and on
+ *  did-finish-load so the overlay never rehydrates with stale regions
+ *  after an HMR reload. */
 export type OverlayRenderPayload = {
   regions: TargetRegion[];
   /** Pixel size of the screenshot the model annotated against. */
   imageWidth: number;
   imageHeight: number;
-  /** Logical pixel size of the display the overlay is covering. */
+  /** Logical pixel size of the display the overlay is covering.
+   *  When the overlay spans multiple monitors this is the union bounds'
+   *  width/height (so the renderer's transform divides by the right
+   *  total). */
   displayWidth: number;
   displayHeight: number;
+  /** Optional — origin of the overlay window in screen coordinates.
+   *  Non-zero when the overlay was repositioned to span a non-primary
+   *  display or a multi-display union. The React side subtracts these
+   *  from each region's absolute screen coords to draw within the
+   *  overlay's local frame. Defaults to (0, 0) when omitted (legacy
+   *  primary-only behaviour). */
+  displayX?: number;
+  displayY?: number;
+  /** Optional — DPI scale factor of the display the regions are
+   *  primarily on. The React side multiplies its coordinate transform
+   *  by this so a 125%-scaled monitor doesn't render boxes at 80% of
+   *  the correct position. Defaults to 1 when omitted.
+   *  TODO: mixed-DPI multi-display is not handled — we pick the
+   *  dominant display's scaleFactor and accept misalignment on the
+   *  others. Real fix needs per-region scaleFactor + per-region
+   *  transform on the renderer side. */
+  scaleFactor?: number;
 };
 
 /** Payload renderer (widget) sends to ask the overlay to appear. */
@@ -168,8 +191,10 @@ export interface OptixApi {
     show: (req: OverlayShowRequest) => Promise<void>;
     /** Hide the overlay. */
     hide: () => Promise<void>;
-    /** Subscribe to render payloads. Used by the overlay renderer only. */
-    onRender: (cb: (payload: OverlayRenderPayload) => void) => () => void;
+    /** Subscribe to render payloads. Used by the overlay renderer only.
+     *  A `null` payload means "clear state" — sent on hide and on
+     *  did-finish-load to defeat HMR rehydrate-with-stale-state. */
+    onRender: (cb: (payload: OverlayRenderPayload | null) => void) => () => void;
   };
   action: {
     /** Execute one approved action on the OS. Returns success / error result. */
