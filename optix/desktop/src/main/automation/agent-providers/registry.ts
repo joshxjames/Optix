@@ -4,12 +4,14 @@ import { anthropicAgentAdapter } from './anthropic';
 import { openaiAgentAdapter } from './openai';
 import { geminiAgentAdapter } from './gemini';
 import { kimiAgentAdapter } from './kimi';
+import { optixCloudAgentAdapter } from './optix-cloud';
 
 const adapters: Partial<Record<ProviderId, AgentProviderAdapter>> = {
   anthropic: anthropicAgentAdapter,
   openai: openaiAgentAdapter,
   google: geminiAgentAdapter,
   kimi: kimiAgentAdapter,
+  optixCloud: optixCloudAgentAdapter,
 };
 
 export function getAgentProvider(id: ProviderId): AgentProviderAdapter {

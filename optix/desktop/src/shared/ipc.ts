@@ -143,6 +143,55 @@ export const IPC = {
     //   its plan-button + plan-view state.
     changed: 'plan:changed',
   },
+  stripe: {
+    // renderer → main: spin up loopback, call createCheckoutSession,
+    //   open the resulting URL in the user's default browser. Returns
+    //   the checkout URL for diagnostics.
+    startCheckout: 'stripe:startCheckout',
+    // renderer → main: tear down the loopback (e.g. user closed the
+    //   pricing page mid-checkout).
+    cancelCheckout: 'stripe:cancelCheckout',
+    // main → renderer: the user's browser hit /checkout-success or
+    //   /checkout-cancel. Renderer decides what to do based on URL.
+    checkoutCallback: 'stripe:checkoutCallback',
+    // renderer → main: mutate an existing subscription (switch plan,
+    //   cancel at period end, reactivate). Wraps the relay's
+    //   updateSubscription Cloud Function.
+    updateSubscription: 'stripe:updateSubscription',
+    // renderer → main: open a Stripe Customer Portal session in the
+    //   user's default browser. Used by the Update Payment Method
+    //   button and by the past_due / 402 inline upgrade prompts.
+    openCustomerPortal: 'stripe:openCustomerPortal',
+  },
+  auth: {
+    // renderer → main: bind a 127.0.0.1 ephemeral-port HTTP server that
+    //   listens for the magic-link callback. Returns the chosen port so
+    //   the renderer can embed it in `continueUrl` before calling
+    //   `sendSignInLinkToEmail`.
+    startLoopback: 'auth:startLoopback',
+    // renderer → main: tear down the loopback server (e.g. user
+    //   cancelled the sign-in, or the renderer just finished
+    //   `signInWithEmailLink` after the callback fired).
+    stopLoopback: 'auth:stopLoopback',
+    // main → renderer: the user's browser hit `/callback?...` — here
+    //   is the full URL. Renderer feeds it into Firebase's
+    //   `signInWithEmailLink`.
+    loopbackCallback: 'auth:loopbackCallback',
+    // renderer → main: stash the pending sign-in email in main-process
+    //   memory between 'Send link' and the loopback callback. Lives
+    //   here (not renderer localStorage) so malicious renderer JS
+    //   can't overwrite it mid-flow to complete sign-in as a
+    //   different account.
+    setPendingEmail: 'auth:setPendingEmail',
+    // renderer → main: read AND clear the pending email in one call.
+    //   One-shot semantics defend against a racing window picking it
+    //   up after the legitimate handler has already consumed it.
+    consumePendingEmail: 'auth:consumePendingEmail',
+    // renderer → main: clear the pending email without reading it.
+    //   Used for explicit cancellation (user closed the sign-in
+    //   prompt before clicking the email link).
+    clearPendingEmail: 'auth:clearPendingEmail',
+  },
   chatHistory: {
     // renderer → main: start a new conversation; returns id for renderer state
     start: 'chatHistory:start',

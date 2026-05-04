@@ -21,7 +21,7 @@ import type {
   TokenUsage,
 } from '../../shared/schemas';
 import type { CaptureTimings, ProviderTimings, SearchSource } from '../../shared/api';
-import { PROVIDER_LABELS } from '../../shared/models';
+import { DEFAULT_MODEL_BY_PROVIDER, PROVIDER_LABELS } from '../../shared/models';
 import { costForTurns } from '../../shared/pricing';
 import { PromptInput, type PromptInputHandle } from './components/PromptInput';
 import { ModeSwitch } from './components/ModeSwitch';
@@ -49,6 +49,28 @@ import { DocsViewer } from './components/DocsViewer';
 import { SlashMenu } from './components/SlashMenu';
 import { AttachmentTray, type StagedAttachment } from './components/AttachmentTray';
 import { UserBubble } from './components/UserBubble';
+import { UpgradePrompt } from './components/UpgradePrompt';
+import {
+  getFreshIdToken,
+  onUserProfileChanged,
+  type UserProfile,
+} from './firebase';
+
+/** Fetch a Firebase ID token only when the active provider is Optix
+ *  Cloud — otherwise returns undefined and the IPC handler falls back
+ *  to the OS-keychain-stored API key. Throws if optixCloud is selected
+ *  but no user is signed in, so the caller can surface a clear error
+ *  before the relay returns 401. */
+async function getCloudAuthToken(
+  providerId: ProviderId | undefined,
+): Promise<string | undefined> {
+  if (providerId !== 'optixCloud') return undefined;
+  const token = await getFreshIdToken();
+  if (!token) {
+    throw new Error('Not signed in to Optix Cloud. Click Sign in in Settings.');
+  }
+  return token;
+}
 
 export type TimingBreakdown = {
   capture?: CaptureTimings;
@@ -520,6 +542,16 @@ export function App() {
   // saves them as a routine on success. Resets to OFF after a save
   // so a single click → single recording.
   const [isRecording, setIsRecording] = useState(false);
+  // Auto-arm Record whenever the user enters Automate mode — the
+  // overwhelming majority of Automate runs are meant to be saved as
+  // routines (that's the whole point of the tab), so making the user
+  // hunt for the Record button each time is friction with no benefit.
+  // After a save fires `setIsRecording(false)`, the user can manually
+  // re-arm or just stay disarmed; we only re-arm on a fresh mode
+  // entry, not on every render.
+  useEffect(() => {
+    if (mode === 'automate') setIsRecording(true);
+  }, [mode]);
   // In-flight recording state, kept on a ref so the runLoop callback
   // (memoised with `[]` deps) sees the latest recording without
   // closure staleness. Set on submit when isRecording was true; the
@@ -840,6 +872,30 @@ export function App() {
     return window.optix.settings.onChange(setSettings);
   }, []);
 
+  // Theme handling — flip the document root's `data-theme` attribute so
+  // the stylesheet's `:root[data-theme='light']` overrides kick in. Dark
+  // is the default and lives in `:root` directly, so we only need to
+  // tag the element when light is selected.
+  useEffect(() => {
+    const theme = settings?.theme ?? 'dark';
+    if (theme === 'light') {
+      document.documentElement.setAttribute('data-theme', 'light');
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+    }
+  }, [settings?.theme]);
+
+  // Live mirror of the Optix Cloud user profile. The UpgradePrompt
+  // (rendered when the relay returns 402/429 mid-prompt) needs the
+  // current tier + monthly cap to phrase its copy correctly. Settings
+  // already subscribes to the same listener; this is a second
+  // subscription owned by App.tsx so the prompt has the data without
+  // round-tripping through props.
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  useEffect(() => {
+    return onUserProfileChanged(setUserProfile);
+  }, []);
+
   // Load the persisted plan on mount + subscribe to plan-changed
   // broadcasts so saves from the runLoop's plan handler (and clears
   // from the plan view) propagate to the Plan button + the view.
@@ -1038,6 +1094,16 @@ export function App() {
     ) => {
       let turn: ComputerLoopTurn;
       try {
+        // For Optix Cloud the main process needs a fresh Firebase ID
+        // token; mint it right before the IPC call so the relay never
+        // sees an expired one. For other providers this is a no-op.
+        // Read provider via the ref because runLoop is memoised with
+        // empty deps — the `settings` closure variable is null on first
+        // render and never updates, so we'd ALWAYS see "not signed in"
+        // here even though Optix Cloud was selected at submit time.
+        const authToken = await getCloudAuthToken(
+          settingsRef.current?.activeProviderId,
+        );
         if (continueLoopId) {
           turn = await window.optix.computer.appendUserMessage({
             loopId: continueLoopId,
@@ -1047,6 +1113,7 @@ export function App() {
             imageWidth,
             imageHeight,
             imageAttachments: initialAttachments,
+            authToken,
           });
         } else {
           turn = await window.optix.computer.start({
@@ -1056,6 +1123,7 @@ export function App() {
             imageWidth,
             imageHeight,
             imageAttachments: initialAttachments,
+            authToken,
           });
         }
       } catch (err) {
@@ -1141,15 +1209,21 @@ export function App() {
             // matches what Access Logs would have shown for the
             // same run.
             const estimatedCostUsd = costForTurns(rec.usages);
+            // Same DEFAULT_MODEL_BY_PROVIDER fallback as the per-turn
+            // usage recording above — keeps the saved routine's model
+            // pointer in sync with what actually ran.
+            const activeId =
+              settingsRef.current?.activeProviderId ?? 'anthropic';
+            const savedModelId =
+              settingsRef.current?.modelByProvider[activeId] ??
+              DEFAULT_MODEL_BY_PROVIDER[activeId] ??
+              '(unknown)';
             void window.optix.routines
               .save({
                 originalPrompt: rec.originalPrompt,
                 actions: rec.actions,
-                providerId: settingsRef.current?.activeProviderId ?? 'anthropic',
-                modelId:
-                  settingsRef.current?.modelByProvider[
-                    settingsRef.current?.activeProviderId ?? 'anthropic'
-                  ] ?? '(unknown)',
+                providerId: activeId,
+                modelId: savedModelId,
                 turnCount: rec.turnCount,
                 estimatedCostUsd,
                 imageWidth: rec.imageWidth,
@@ -1202,13 +1276,19 @@ export function App() {
             cacheCreationInputTokens: turn.cacheCreationInputTokens,
             cacheReadInputTokens: turn.cacheReadInputTokens,
           };
-          recordingRef.current.usages.push({
-            modelId:
-              settingsRef.current?.modelByProvider[
-                settingsRef.current?.activeProviderId ?? 'anthropic'
-              ] ?? '(unknown)',
-            usage: u,
-          });
+          // Resolve the model id with the same `??` chain main uses in
+          // `getModelFor()`: persisted user pick → provider default →
+          // sentinel. Without the DEFAULT step, providers added after a
+          // user's settings file was first written (e.g. optixCloud)
+          // fall straight through to "(unknown)" and `costForTurn`
+          // can't price the run — the routine ends up showing $0.0000
+          // even though the agent burned real tokens.
+          const activeId = settingsRef.current?.activeProviderId ?? 'anthropic';
+          const turnModelId =
+            settingsRef.current?.modelByProvider[activeId] ??
+            DEFAULT_MODEL_BY_PROVIDER[activeId] ??
+            '(unknown)';
+          recordingRef.current.usages.push({ modelId: turnModelId, usage: u });
         }
         // Stage: insert a 'running' action item for each tool_use, in order.
         const newActions: LoopActionItem[] = turn.toolUses.map((tu: AgentToolUse) => ({
@@ -1742,11 +1822,21 @@ export function App() {
 
         // Send the batch of results back; await the next turn.
         try {
+          // Refresh the Optix Cloud token before each turn so loops
+          // longer than ~1hr don't 401 mid-stream. No-op for other
+          // providers. Same `settingsRef.current` reasoning as the
+          // start-loop call above — the runLoop closure can't see
+          // post-mount `settings` updates.
+          // eslint-disable-next-line no-await-in-loop
+          const continueAuthToken = await getCloudAuthToken(
+            settingsRef.current?.activeProviderId,
+          );
           // eslint-disable-next-line no-await-in-loop
           turn = await window.optix.computer.continue({
             loopId: turn.loopId,
             results,
             extraUserText,
+            authToken: continueAuthToken,
           });
         } catch (err) {
           setStatus({
@@ -2028,6 +2118,9 @@ export function App() {
         })
       : [];
     try {
+      // Optix Cloud needs a fresh Firebase ID token alongside the
+      // request; other providers ignore the field.
+      const authToken = await getCloudAuthToken(settings?.activeProviderId);
       const { response, timings: providerTimings, usedWebSearch, sources, usage } = await window.optix.provider.prompt({
         mode,
         prompt,
@@ -2037,6 +2130,7 @@ export function App() {
         imageHeight,
         imageAttachments: submittedAttachments,
         priorTurns,
+        authToken,
       });
       // Stash the provider+model+usage for the persistence layer to
       // pick up when the turn finalises. Stored on the same ref as
@@ -2530,7 +2624,15 @@ export function App() {
   }
 
   const providerLabel = PROVIDER_LABELS[settings.activeProviderId];
-  const modelLabel = settings.modelByProvider[settings.activeProviderId] ?? '(no model)';
+  // Optix Cloud abstracts model choice — always Opus 4.7 under the hood —
+  // so we drop the model suffix from the header. BYO-key providers
+  // surface the chosen model so the user can see what they're paying for.
+  const modelLabel =
+    settings.activeProviderId === 'optixCloud'
+      ? undefined
+      : settings.modelByProvider[settings.activeProviderId] ??
+        DEFAULT_MODEL_BY_PROVIDER[settings.activeProviderId] ??
+        '(no model)';
 
   return (
     <div className={`widget${isCompact ? ' widget--compact' : ''}`}>
@@ -2724,7 +2826,11 @@ export function App() {
                   />
                 )}
                 {t.kind === 'error' && (
-                  <div className="widget__error">{t.message}</div>
+                  <ErrorOrUpgradePrompt
+                    message={t.message}
+                    userProfile={userProfile}
+                    onOpenSettings={() => setShowSettings(true)}
+                  />
                 )}
               </div>
             ))}
@@ -2750,7 +2856,11 @@ export function App() {
                   )}
 
                   {status.kind === 'error' && (
-                    <div className="widget__error">{status.message}</div>
+                    <ErrorOrUpgradePrompt
+                      message={status.message}
+                      userProfile={userProfile}
+                      onOpenSettings={() => setShowSettings(true)}
+                    />
                   )}
 
                   {status.kind === 'looping' && (
@@ -3019,4 +3129,34 @@ export function App() {
       </div>
     </div>
   );
+}
+
+/** Tiny dispatcher that picks between the rich UpgradePrompt card
+ *  (recoverable Optix Cloud billing failures) and the plain
+ *  `widget__error` toast (everything else). Lives here in App.tsx
+ *  rather than inside UpgradePrompt so the upgrade component stays
+ *  single-purpose and the fallback path doesn't need to know about
+ *  styling owned by the widget shell. */
+function ErrorOrUpgradePrompt({
+  message,
+  userProfile,
+  onOpenSettings,
+}: {
+  message: string;
+  userProfile: UserProfile | null;
+  onOpenSettings: () => void;
+}): JSX.Element {
+  // Cheap prefix check — the encoder's stable sentinel — so we don't
+  // pay a regex + JSON.parse for non-billing errors. UpgradePrompt
+  // does the full decode internally and renders accordingly.
+  if (message.startsWith('OPTIX_BILLING:')) {
+    return (
+      <UpgradePrompt
+        errorMessage={message}
+        userProfile={userProfile}
+        onOpenSettings={onOpenSettings}
+      />
+    );
+  }
+  return <div className="widget__error">{message}</div>;
 }

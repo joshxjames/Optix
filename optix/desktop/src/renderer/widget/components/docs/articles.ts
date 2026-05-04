@@ -34,6 +34,7 @@ export const DOC_CATEGORIES: string[] = [
   'History & logs',
   'Automations',
   'Settings reference',
+  'Optix Cloud',
   'Tips',
 ];
 
@@ -860,6 +861,176 @@ export const DOC_ARTICLES: DocArticle[] = [
       {
         kind: 'p',
         text: "API keys are NOT in any of those — they live in your OS keychain. Settings are in the standard electron-store config file in the same user-data directory.",
+      },
+    ],
+  },
+
+  // -------------------------------------------------------------------------
+  // Optix Cloud
+  // -------------------------------------------------------------------------
+  {
+    id: 'cloud-overview',
+    category: 'Optix Cloud',
+    title: 'What Optix Cloud is',
+    summary: "Managed Claude access — no API key required, billed monthly.",
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Optix Cloud is a managed plan that runs your prompts through our backend instead of your own API key. You sign in with email, pick a tier, and Claude Opus 4.7 is included — Ask, Access, and Automate all work the same as the BYO-key path.',
+      },
+      {
+        kind: 'h',
+        text: 'Why use it',
+      },
+      {
+        kind: 'ul',
+        items: [
+          "No API key to manage or rotate — sign in with email and you're done.",
+          'Predictable monthly billing instead of pay-per-token Anthropic invoices.',
+          'Web search, prompt caching, and Computer Use all included.',
+          'Usage meter in Settings shows exactly where you are in your monthly allowance.',
+        ],
+      },
+      {
+        kind: 'h',
+        text: 'When to stick with BYO key',
+      },
+      {
+        kind: 'p',
+        text: 'If you already pay Anthropic directly, want a non-Claude provider (OpenAI, Gemini, Kimi), or run very low volume where pay-per-use beats a flat monthly fee — keep your existing setup. Switching providers is a single radio button in Settings; nothing about Optix Cloud is required.',
+      },
+      {
+        kind: 'note',
+        text: "Your data still stays local. The relay forwards request bodies to Anthropic verbatim and never logs them — only token counts, for billing.",
+      },
+    ],
+  },
+  {
+    id: 'cloud-plans',
+    category: 'Optix Cloud',
+    title: 'Pricing and plans',
+    summary: 'Starter and Pro tiers, monthly token allowances, what happens at the cap.',
+    blocks: [
+      {
+        kind: 'h',
+        text: 'Starter — $49 / month',
+      },
+      {
+        kind: 'ul',
+        items: [
+          '5 million tokens per month',
+          'Claude Opus 4.7 included',
+          'Ask + Access + Automate',
+          'Web search included',
+        ],
+      },
+      {
+        kind: 'h',
+        text: 'Pro — $99 / month',
+      },
+      {
+        kind: 'ul',
+        items: [
+          '15 million tokens per month',
+          'Claude Opus 4.7 included',
+          'Ask + Access + Automate',
+          'Web search included',
+          'Priority support',
+        ],
+      },
+      {
+        kind: 'h',
+        text: 'How tokens are counted',
+      },
+      {
+        kind: 'p',
+        text: "Every API call that goes through the relay — Ask, Access, Automate, web search — adds to your monthly count. Input, output, cache-read, and cache-create tokens are all summed. The Settings panel shows the running total live, e.g. \"7.5k / 15M\".",
+      },
+      {
+        kind: 'h',
+        text: 'When you hit the cap',
+      },
+      {
+        kind: 'p',
+        text: "The relay returns a 429 error and your next prompt fails with a clear message. The cap resets on the first day of each calendar month (UTC). If you hit the limit mid-month and need more, upgrading to Pro takes effect immediately — Stripe prorates the difference.",
+      },
+    ],
+  },
+  {
+    id: 'cloud-signin-and-subscribe',
+    category: 'Optix Cloud',
+    title: 'Signing in and subscribing',
+    summary: 'Magic link via email, Stripe Checkout in your browser, back to the widget.',
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Sign-in is email-only — no password, no account creation form. The widget sends a one-time link to your inbox; clicking it signs you in.',
+      },
+      {
+        kind: 'h',
+        text: 'Step by step',
+      },
+      {
+        kind: 'ul',
+        items: [
+          'In Settings, switch the active provider to Optix Cloud.',
+          "Enter your email and click \"Send sign-in link\".",
+          'Check your inbox and click the link — your default browser opens briefly, you see a "Signed in" page, then the widget updates automatically.',
+          'Pick Starter or Pro from the pricing cards. Stripe Checkout opens in your browser.',
+          'Pay with card or Apple/Google Pay. After payment, the browser shows "Subscription confirmed" and the widget unlocks within a second or two.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: "The handoff between widget and browser uses a localhost listener bound to 127.0.0.1 — only your own machine can reach it, and it shuts down the moment the callback arrives or after 10 minutes if you abandon the flow.",
+      },
+      {
+        kind: 'note',
+        text: "If your browser doesn't auto-fire the magic link, paste the link from your inbox into the same browser. Don't paste it back into the widget — the widget can't read browser URL bars.",
+      },
+    ],
+  },
+  {
+    id: 'cloud-manage-subscription',
+    category: 'Optix Cloud',
+    title: 'Managing your subscription',
+    summary: 'Upgrade, downgrade, cancel, and reactivate from Settings.',
+    blocks: [
+      {
+        kind: 'p',
+        text: "When you're subscribed, Settings shows your email + plan + monthly usage on top, with action buttons on the right.",
+      },
+      {
+        kind: 'h',
+        text: 'Upgrade or Downgrade',
+      },
+      {
+        kind: 'p',
+        text: "If you're on Starter, the button reads Upgrade and switches you to Pro. If you're on Pro, it reads Downgrade and switches you to Starter. The change is immediate — Stripe prorates the difference for the rest of the current cycle, and your token allowance updates the moment Stripe confirms (usually a second or two).",
+      },
+      {
+        kind: 'h',
+        text: 'Cancel Plan',
+      },
+      {
+        kind: 'p',
+        text: "Cancelling does NOT cut off access — you keep Optix Cloud until the end of the current paid period, then it auto-stops. The Settings panel shows \"ends on <date>\" so you know when. Until that date you can hit Reactivate to undo the cancellation; no second payment, just back to active.",
+      },
+      {
+        kind: 'h',
+        text: 'Sign out',
+      },
+      {
+        kind: 'p',
+        text: "Sign out logs you out of Optix Cloud locally but does NOT cancel your subscription. To stop being billed you need to click Cancel Plan — those are independent actions.",
+      },
+      {
+        kind: 'h',
+        text: 'Privacy',
+      },
+      {
+        kind: 'p',
+        text: "The relay forwards every request body byte-for-byte to Anthropic and never logs the content. What's stored on our side: your email, your plan + tier, the current period end, and per-month token totals (input, output, cache hits, request count). Nothing about WHAT you asked or what Claude replied is recorded.",
       },
     ],
   },

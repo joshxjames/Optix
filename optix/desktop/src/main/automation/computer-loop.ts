@@ -241,6 +241,13 @@ export async function continueComputerLoop(
   const state = loops.get(req.loopId);
   if (!state) throw new Error(`Unknown loopId: ${req.loopId}`);
 
+  // Optix Cloud only: swap in the fresh ID token before this turn so
+  // the relay never sees an expired Bearer. No-op for adapters that
+  // don't expose `refreshCredential`.
+  if (req.authToken && state.adapter.refreshCredential) {
+    state.adapter.refreshCredential(state.adapterState, req.authToken);
+  }
+
   // Validate that every parsed-action id has a renderer-supplied result.
   // The adapter handles parse-error ids internally during appendResults.
   const provided = new Set(req.results.map((r) => r.toolUseId));
@@ -343,6 +350,12 @@ export async function appendUserMessageToLoop(
 ): Promise<ComputerLoopTurn> {
   const state = loops.get(req.loopId);
   if (!state) throw new Error(`Unknown loopId: ${req.loopId}`);
+
+  // Same refresh as continueComputerLoop — most relevant here, where a
+  // user might come back to a paused conversation hours later.
+  if (req.authToken && state.adapter.refreshCredential) {
+    state.adapter.refreshCredential(state.adapterState, req.authToken);
+  }
 
   state.adapter.appendUserTurn(state.adapterState, {
     prompt: req.prompt,

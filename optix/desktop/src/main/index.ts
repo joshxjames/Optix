@@ -28,6 +28,9 @@ import { registerChatHistoryIpc } from '@main/ipc/chat-history.ipc';
 import { registerPlanIpc } from '@main/ipc/plan.ipc';
 import { registerRoutinesIpc } from '@main/ipc/routines.ipc';
 import { registerCaptureIpc } from '@main/ipc/capture.ipc';
+import { registerAuthIpc } from '@main/ipc/auth.ipc';
+import { registerStripeIpc } from '@main/ipc/stripe.ipc';
+import { stopLoopbackServer } from '@main/auth/loopback-server';
 import { registerHotkeys, unregisterHotkeys } from '@main/hotkeys/register';
 import { getSettings, setSettings } from '@main/storage/settings-store';
 import { finalizeAllPendingLoops } from '@main/automation/computer-loop';
@@ -52,6 +55,9 @@ app.on('second-instance', () => {
 // before Electron tears down the process.
 app.on('before-quit', () => {
   finalizeAllPendingLoops();
+  // Tear down any in-flight magic-link loopback server so we don't
+  // leak a listening socket past process exit.
+  stopLoopbackServer();
 });
 
 app.whenReady().then(() => {
@@ -73,6 +79,8 @@ app.whenReady().then(() => {
   registerPlanIpc();
   registerRoutinesIpc();
   registerCaptureIpc();
+  registerAuthIpc();
+  registerStripeIpc();
 
   // Intercept navigator.mediaDevices.getDisplayMedia calls from any renderer.
   // We auto-select the primary display source — no system picker, no prompt.

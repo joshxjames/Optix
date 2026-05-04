@@ -50,10 +50,20 @@ export function registerProviderIpc(): void {
     const provider = getProvider(activeProviderId);
     const modelId = getModelFor(activeProviderId);
 
-    const apiKey = await getApiKey(activeProviderId);
-    if (!apiKey) {
+    // For BYO-key providers we fetch the user's API key from the OS
+    // keychain. For Optix Cloud the renderer attaches a fresh Firebase
+    // ID token to the request (Auth state lives in the renderer; the
+    // SDK auto-refreshes the token, so we always pass through whatever
+    // the renderer just minted).
+    const credential =
+      activeProviderId === 'optixCloud'
+        ? req.authToken
+        : await getApiKey(activeProviderId);
+    if (!credential) {
       throw new Error(
-        `No API key configured for ${activeProviderId}. Open Settings to add one.`,
+        activeProviderId === 'optixCloud'
+          ? 'Not signed in to Optix Cloud. Click Sign in in Settings.'
+          : `No API key configured for ${activeProviderId}. Open Settings to add one.`,
       );
     }
 
@@ -193,7 +203,7 @@ export function registerProviderIpc(): void {
             totalUsage.cacheReadInputTokens += usage.cacheReadInputTokens ?? 0;
           },
         },
-        apiKey,
+        credential,
       );
       flushChunks();
       const t1 = performance.now();
@@ -266,7 +276,7 @@ export function registerProviderIpc(): void {
               // No onChunk — first response already streamed to the
               // renderer; the retry just silently swaps in the regions.
             },
-            apiKey,
+            credential,
           );
           const retriedHasRegions =
             retried.targetRegions.length > 0 ||
@@ -461,6 +471,15 @@ export function registerProviderIpc(): void {
 
   ipcMain.handle(IPC.provider.testKey, async (_event, rawId: unknown) => {
     const providerId = ProviderIdSchema.parse(rawId);
+    // Optix Cloud has no stored key — the sign-in UI in Settings is the
+    // canonical source of truth for "is this connection working." Phase B
+    // (magic-link flow) will add a dedicated relay-ping button there.
+    if (providerId === 'optixCloud') {
+      return {
+        ok: false as const,
+        error: 'Optix Cloud uses sign-in instead of an API key — use the Sign in button.',
+      };
+    }
     const provider = getProvider(providerId);
     const apiKey = await getApiKey(providerId);
     if (!apiKey) return { ok: false as const, error: 'No API key stored for this provider.' };

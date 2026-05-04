@@ -25,7 +25,10 @@ import type {
 
 const COMPUTER_BETA = 'computer-use-2025-11-24';
 
-type AnthropicState = {
+// Exported so the Optix Cloud adapter can build the same internal
+// state shape and just swap the SDK client for one that talks to our
+// Firebase relay.
+export type AnthropicState = {
   client: Anthropic;
   modelId: string;
   imageWidth: number;

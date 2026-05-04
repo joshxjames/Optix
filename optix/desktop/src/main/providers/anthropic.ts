@@ -112,13 +112,21 @@ async function streamAndCollect(
   return await stream.finalMessage();
 }
 
-export const anthropicProvider: Provider = {
-  id: 'anthropic',
-
-  async prompt(input: PromptInput, apiKey: string): Promise<ModelResponse> {
-    const client = getAnthropicClient(apiKey);
-
-    const userContent: Array<Anthropic.Messages.TextBlockParam | Anthropic.Messages.ImageBlockParam> = [];
+/**
+ * Shared Anthropic-protocol prompt runner. Used by both the direct
+ * Anthropic provider and the Optix Cloud relay provider — they speak the
+ * exact same wire protocol, so all the message-building, web-search
+ * fallback, and response-parsing logic lives here. The only thing that
+ * differs between the two providers is how the `client` is constructed
+ * (apiKey vs Bearer token + relay baseURL).
+ *
+ * Exported so `optix-cloud.ts` can inject its relay-bound client.
+ */
+export async function runAnthropicPrompt(
+  client: Anthropic,
+  input: PromptInput,
+): Promise<ModelResponse> {
+  const userContent: Array<Anthropic.Messages.TextBlockParam | Anthropic.Messages.ImageBlockParam> = [];
     if (input.imageBytes) userContent.push(bytesToImageBlock(input.imageBytes, input.imageMimeType));
     // User-attached reference images go after the screenshot, before the
     // prompt text — that order keeps the screenshot first (it's usually
@@ -351,6 +359,13 @@ export const anthropicProvider: Provider = {
     }
 
     throw new Error(`Anthropic fallback loop exceeded ${MAX_ITERATIONS} iterations without producing a final answer.`);
+}
+
+export const anthropicProvider: Provider = {
+  id: 'anthropic',
+
+  async prompt(input: PromptInput, apiKey: string): Promise<ModelResponse> {
+    return runAnthropicPrompt(getAnthropicClient(apiKey), input);
   },
 
   async testKey(apiKey: string): Promise<void> {

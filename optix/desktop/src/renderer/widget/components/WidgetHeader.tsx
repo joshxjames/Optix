@@ -3,7 +3,11 @@ import { HelpIcon } from './Icons';
 
 type Props = {
   providerLabel: string;
-  modelLabel: string;
+  /** Model id to show after the provider label, e.g. "Optix Cloud · claude-opus-4-7".
+   *  Omit to render just the provider label — used by Optix Cloud where the model
+   *  is an internal detail (always Opus 4.7) and showing it would just clutter
+   *  the header with a string the user didn't pick. */
+  modelLabel?: string;
   onDocs: () => void;
   onSettings: () => void;
   onHide: () => void;
@@ -26,7 +30,7 @@ function WidgetHeaderImpl({
         <span className="widget__dot" aria-hidden="true" />
         <strong>Optix</strong>
         <span className="widget__model">
-          {providerLabel} · {modelLabel}
+          {modelLabel ? `${providerLabel} · ${modelLabel}` : providerLabel}
         </span>
       </div>
       <div className="widget__header-actions">

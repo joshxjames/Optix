@@ -12,8 +12,24 @@ export const Uint8ArraySchema: z.ZodType<Uint8Array> = z.instanceof(Uint8Array);
 export const ModeSchema = z.enum(['guide', 'action', 'automate']);
 export type Mode = z.infer<typeof ModeSchema>;
 
-export const ProviderIdSchema = z.enum(['anthropic', 'openai', 'kimi', 'google']);
+// Provider list. Four BYO-key options + Optix Cloud (managed, billed via
+// subscription, talks to our Firebase relay with a Bearer token instead
+// of a raw provider key).
+export const ProviderIdSchema = z.enum([
+  'anthropic',
+  'openai',
+  'kimi',
+  'google',
+  'optixCloud',
+]);
 export type ProviderId = z.infer<typeof ProviderIdSchema>;
+
+// Optix Cloud subscription tiers. Mirrored from the Cloud Functions'
+// `TOKEN_ALLOWANCE_MONTHLY` mapping; the renderer needs the literal
+// for billing-error rendering ("Upgrade to Pro" vs "you're already on
+// Pro — wait until renewal").
+export const TierSchema = z.enum(['starter', 'pro']);
+export type Tier = z.infer<typeof TierSchema>;
 
 // A rectangular region on screen the model wants to point at.
 export const TargetRegionSchema = z.object({
@@ -434,6 +450,9 @@ export const ComputerLoopStartRequestSchema = z.object({
       }),
     )
     .default([]),
+  // Firebase ID token, only when active provider is 'optixCloud'.
+  // 100–5000 chars: Firebase ID tokens are ~1 KB; defends against blob injection.
+  authToken: z.string().min(100).max(5000).optional(),
 });
 export type ComputerLoopStartRequest = z.infer<typeof ComputerLoopStartRequestSchema>;
 
@@ -445,6 +464,11 @@ export const ComputerLoopContinueRequestSchema = z.object({
    *  appends it to the next user message so the agent re-reads its plan
    *  before the next turn. */
   extraUserText: z.string().optional(),
+  /** Fresh Firebase ID token for Optix Cloud loops. Renderer mints one
+   *  per continue call so the SDK client always speaks to the relay
+   *  with an unexpired Bearer. Ignored for other providers. */
+  // 100–5000 chars: Firebase ID tokens are ~1 KB; defends against blob injection.
+  authToken: z.string().min(100).max(5000).optional(),
 });
 
 // Append a brand-new user message to an existing (paused) Access loop.
@@ -466,6 +490,9 @@ export const ComputerLoopAppendRequestSchema = z.object({
       }),
     )
     .default([]),
+  // Firebase ID token for follow-up Access turns when on optixCloud.
+  // 100–5000 chars: Firebase ID tokens are ~1 KB; defends against blob injection.
+  authToken: z.string().min(100).max(5000).optional(),
 });
 export type ComputerLoopAppendRequest = z.infer<typeof ComputerLoopAppendRequestSchema>;
 export type ComputerLoopContinueRequest = z.infer<typeof ComputerLoopContinueRequestSchema>;
@@ -607,6 +634,12 @@ export const PromptRequestSchema = z.object({
   // conversationMode is on. Without these, an Ask follow-up is sent
   // as if it were a fresh first-time question.
   priorTurns: z.array(PriorTurnSchema).default([]),
+  // Firebase ID token, only sent when activeProviderId === 'optixCloud'.
+  // The cloud relay verifies it server-side. ID tokens expire in 1 hour
+  // so the renderer fetches a fresh one (via the Firebase SDK's auto-
+  // refresh) right before each call instead of caching it in main.
+  // 100–5000 chars: Firebase ID tokens are ~1 KB; defends against blob injection.
+  authToken: z.string().min(100).max(5000).optional(),
 });
 export type PromptRequest = z.infer<typeof PromptRequestSchema>;
 
@@ -656,5 +689,13 @@ export const SettingsSchema = z.object({
    * (default), every prompt is a one-shot.
    */
   conversationMode: z.boolean().default(false),
+  /**
+   * Visual theme. The renderer applies this as a `data-theme` attribute
+   * on the document root, and the stylesheet flips its CSS variables
+   * accordingly. Dark is the historical default (matches the floating-
+   * over-the-screen aesthetic); light is for daytime / brighter
+   * environments where dark-on-bright is hard to read.
+   */
+  theme: z.enum(['dark', 'light']).default('dark'),
 });
 export type Settings = z.infer<typeof SettingsSchema>;

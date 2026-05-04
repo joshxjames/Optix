@@ -11,13 +11,15 @@
     "typecheck": "tsc --noEmit",
     "package": "electron-vite build && electron-builder",
     "package:win": "electron-vite build && electron-builder --win portable",
-    "package:mac": "electron-vite build && electron-builder --mac dmg"
+    "package:mac": "electron-vite build && electron-builder --mac dmg",
+    "cost-report": "node scripts/cost-report.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
     "@google/generative-ai": "^0.21.0",
     "@hurdlegroup/robotjs": "^0.12.3",
     "electron-store": "^10.0.0",
+    "firebase": "^12.12.1",
     "keytar": "^7.9.0",
     "openai": "^4.73.1",
     "react": "^18.3.1",

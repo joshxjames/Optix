@@ -106,6 +106,14 @@ export interface AgentProviderAdapter<State = unknown> {
    *  of starting fresh. After this call the next `step()` will read the
    *  new user message as if the agent had never stopped. */
   appendUserTurn(state: State, opts: AppendUserTurnOpts): void;
+  /** Optional: swap in a fresh credential for the underlying SDK
+   *  client. Only Optix Cloud uses this — Firebase ID tokens expire
+   *  after ~1 hour, so any conversation-mode loop that sits idle long
+   *  enough would otherwise fail with 401 mid-turn. The renderer
+   *  attaches a freshly-minted token to each continue/append request,
+   *  and the loop driver calls this before the next step. Adapters
+   *  that don't need refresh (BYO-key providers) leave it undefined. */
+  refreshCredential?(state: State, credential: string): void;
 }
 
 export type AppendUserTurnOpts = {

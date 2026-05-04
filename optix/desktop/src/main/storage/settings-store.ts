@@ -14,6 +14,7 @@ const defaults: Settings = {
   agentCostCeilingUsd: null,
   agentWorkspaceFolder: null,
   conversationMode: false,
+  theme: 'dark',
 };
 
 // Lazy-init: `new Store()` resolves `app.getPath('userData')` eagerly, which

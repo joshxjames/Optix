@@ -4,8 +4,10 @@ An open-source AI co-pilot that lives in a floating desktop widget. It can answe
 questions about what's on your screen, take actions on your machine when you
 let it, and record those actions as reusable automations.
 
-Bring your own provider API key. Everything runs locally; nothing leaves your
-machine except the prompts and screenshots you send to the model.
+Bring your own provider API key — or skip the API-key part entirely with
+**Optix Cloud**, our optional managed plan. Either way everything runs
+locally; nothing leaves your machine except the prompts and screenshots you
+send to the model.
 
 ---
 
@@ -114,6 +116,35 @@ sensitive system surfaces. Worth knowing what they are:
 Approval modes give you per-task or per-action gates if you want a tighter
 leash. The "never" mode skips prompts inside the workspace but still gates
 anything outside it.
+
+---
+
+## Optix Cloud (optional)
+
+Don't want to manage an API key? Pick **Optix Cloud** as your provider in
+Settings. Sign in with email — a one-time link arrives in your inbox, you
+click it, the widget unlocks. Then choose a plan:
+
+- **Starter — $49/mo** — 5M tokens/month, Claude Opus 4.7, all three modes,
+  web search included.
+- **Pro — $99/mo** — 15M tokens/month, everything in Starter, priority
+  support.
+
+Plans are billed monthly via Stripe and cancellable anytime. Upgrading or
+downgrading happens immediately (Stripe prorates the difference); cancelling
+keeps your access until the end of the current paid period, then auto-stops.
+
+The cloud relay forwards every request body to Anthropic byte-for-byte and
+**never logs request or response content** — only the token totals it needs
+for billing. Your prompts, screenshots, and Claude's replies stay between
+you and Anthropic; we just sit in the network path with our admin API key
+attached. The relay's source is in the
+[Optix-Cloud](https://github.com/joshxjames/Optix-Cloud) repo if you want
+to verify.
+
+The two paths coexist: every BYO-key provider (Anthropic / OpenAI / Kimi /
+Gemini) still works exactly the same. Switch back via the Settings provider
+picker any time.
 
 ---
 

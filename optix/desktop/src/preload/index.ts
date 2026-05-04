@@ -192,6 +192,32 @@ const api: OptixApi = {
       ipcRenderer.invoke(IPC.audit.export, { filename, format }),
     delete: (filename) => ipcRenderer.invoke(IPC.audit.delete, { filename }),
   },
+  auth: {
+    startLoopback: () => ipcRenderer.invoke(IPC.auth.startLoopback),
+    stopLoopback: () => ipcRenderer.invoke(IPC.auth.stopLoopback),
+    onLoopbackCallback: (cb) => {
+      const listener = (_: unknown, payload: { url: string }) => cb(payload.url);
+      ipcRenderer.on(IPC.auth.loopbackCallback, listener);
+      return () => ipcRenderer.removeListener(IPC.auth.loopbackCallback, listener);
+    },
+    setPendingEmail: (req) => ipcRenderer.invoke(IPC.auth.setPendingEmail, req),
+    consumePendingEmail: () => ipcRenderer.invoke(IPC.auth.consumePendingEmail),
+    clearPendingEmail: () => ipcRenderer.invoke(IPC.auth.clearPendingEmail),
+  },
+  stripe: {
+    startCheckout: (req) => ipcRenderer.invoke(IPC.stripe.startCheckout, req),
+    cancelCheckout: () => ipcRenderer.invoke(IPC.stripe.cancelCheckout),
+    onCheckoutCallback: (cb) => {
+      const listener = (_: unknown, payload: { url: string }) => cb(payload.url);
+      ipcRenderer.on(IPC.stripe.checkoutCallback, listener);
+      return () =>
+        ipcRenderer.removeListener(IPC.stripe.checkoutCallback, listener);
+    },
+    updateSubscription: (req) =>
+      ipcRenderer.invoke(IPC.stripe.updateSubscription, req),
+    openCustomerPortal: (req) =>
+      ipcRenderer.invoke(IPC.stripe.openCustomerPortal, req),
+  },
   chatHistory: {
     start: (req) => ipcRenderer.invoke(IPC.chatHistory.start, req),
     appendTurn: (req) => ipcRenderer.invoke(IPC.chatHistory.appendTurn, req),

@@ -280,6 +280,69 @@ export interface OptixApi {
      *  No payload — listeners refresh by re-listing. */
     onChanged: (cb: () => void) => () => void;
   };
+  auth: {
+    /** Bind a localhost loopback HTTP server and return its port. The
+     *  renderer embeds this port in the magic-link `continueUrl` so the
+     *  email-link callback comes back to us. One-shot: closed
+     *  automatically once `onLoopbackCallback` fires. */
+    startLoopback: () => Promise<{ port: number }>;
+    /** Tear down the loopback server. Idempotent. */
+    stopLoopback: () => Promise<void>;
+    /** Subscribe to the loopback-callback push event. Cb receives the
+     *  full URL the user's browser hit (including `oobCode`, `apiKey`,
+     *  `mode`, etc. query params). Returns an unsubscribe fn. */
+    onLoopbackCallback: (cb: (url: string) => void) => () => void;
+    /** Stash the pending sign-in email in main-process memory.
+     *  Validated server-side (length 1–500, basic email shape).
+     *  Lives in main rather than renderer localStorage so malicious
+     *  renderer JS can't overwrite it mid-flow. */
+    setPendingEmail: (req: { email: string }) => Promise<void>;
+    /** Read AND clear the pending email in one call. One-shot —
+     *  defends against a second widget window racing to read it
+     *  after the legitimate loopback handler has already consumed
+     *  it. Returns `{ email: null }` when nothing is stashed. */
+    consumePendingEmail: () => Promise<{ email: string | null }>;
+    /** Clear the pending email without reading it. Use for explicit
+     *  cancellation (user closed the sign-in prompt before clicking
+     *  the email link). Idempotent. */
+    clearPendingEmail: () => Promise<void>;
+  };
+  stripe: {
+    /** Begin the Stripe Checkout flow for a tier: bind a loopback
+     *  return URL, ask the relay for a Checkout session, open the URL
+     *  in the user's default browser. Returns the URL (mostly for
+     *  diagnostics — the user is now in their browser). */
+    startCheckout: (req: {
+      tier: 'starter' | 'pro';
+      authToken: string;
+    }) => Promise<{ checkoutUrl: string }>;
+    /** Tear down the loopback if the user closes the pricing page
+     *  before Checkout completes. Idempotent. */
+    cancelCheckout: () => Promise<void>;
+    /** Subscribe to checkout-callback push events. Cb receives the
+     *  full URL the user's browser hit — `/checkout-success` or
+     *  `/checkout-cancel` — so the renderer can branch on outcome. */
+    onCheckoutCallback: (cb: (url: string) => void) => () => void;
+    /** Mutate an active subscription. Three actions:
+     *   - switchPlan: change tier mid-cycle (Stripe prorates)
+     *   - cancel: schedule cancellation at period end
+     *   - reactivate: undo a pending cancellation
+     *  Returns once the Cloud Function acks; the user's Firestore
+     *  profile updates a moment later when the Stripe webhook fires. */
+    updateSubscription: (
+      req:
+        | { action: 'switchPlan'; tier: 'starter' | 'pro'; authToken: string }
+        | { action: 'cancel'; authToken: string }
+        | { action: 'reactivate'; authToken: string },
+    ) => Promise<{ success: true }>;
+    /** Open a Stripe Customer Portal session in the user's default
+     *  browser. Lets them update their card, view invoices, or cancel/
+     *  reactivate via Stripe-hosted UI. State changes propagate back
+     *  via webhooks; the user just closes the tab when done. */
+    openCustomerPortal: (req: {
+      authToken: string;
+    }) => Promise<{ portalUrl: string }>;
+  };
   chatHistory: {
     /** Start a new conversation; returns the conversation metadata
      *  (id, started timestamp, etc.) for renderer-side state. */

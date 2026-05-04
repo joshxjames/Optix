@@ -68,16 +68,23 @@ export function registerComputerIpc(): void {
         `Access mode is not yet supported on provider "${providerId}". Switch to Anthropic in Settings — OpenAI / Gemini / Kimi support is rolling out.`,
       );
     }
-    const apiKey = await getApiKey(providerId);
-    if (!apiKey) {
+    // Optix Cloud: the renderer attached a fresh Firebase ID token to
+    // the request. For BYO-key providers, fetch from the OS keychain.
+    const credential =
+      providerId === 'optixCloud'
+        ? req.authToken
+        : await getApiKey(providerId);
+    if (!credential) {
       throw new Error(
-        `No ${providerId} API key configured. Open Settings to add one.`,
+        providerId === 'optixCloud'
+          ? 'Not signed in to Optix Cloud. Click Sign in in Settings.'
+          : `No ${providerId} API key configured. Open Settings to add one.`,
       );
     }
     const modelId = getModelFor(providerId);
     return await startComputerLoop(
       req,
-      apiKey,
+      credential,
       modelId,
       settings.agentCostCeilingUsd ?? null,
       settings.agentWorkspaceFolder ?? null,

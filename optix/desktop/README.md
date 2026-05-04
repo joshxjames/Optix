@@ -29,14 +29,29 @@ Shared schemas (Zod) live in `src/shared/` and are imported by both main and ren
 
 ## Providers
 
-Abstracted behind `src/main/providers/base.ts`. Phase 1 implementations:
+Abstracted behind `src/main/providers/base.ts` (Ask) and `src/main/automation/agent-providers/types.ts` (Access). Currently shipped:
 
 - Anthropic (`@anthropic-ai/sdk`)
 - OpenAI (`openai`)
 - Moonshot / Kimi (OpenAI-compatible, reuses the `openai` SDK with a custom base URL)
 - Google Gemini (`@google/generative-ai`)
+- **Optix Cloud** — relay-routed Anthropic, no API key required (see below)
 
-API keys are stored in the OS keychain via `keytar`.
+API keys for the BYO-key providers are stored in the OS keychain via `keytar`.
+
+## Optix Cloud integration
+
+Optix Cloud is a fifth provider that piggybacks on the Anthropic adapter but routes every API call through our [optix-cloud](https://github.com/joshxjames/Optix-Cloud) Firebase relay instead of `api.anthropic.com`. The desktop client owns sign-in, checkout opening, and subscription management UI; the relay owns auth verification, subscription gating, usage metering, and Stripe webhooks.
+
+Key files:
+
+- **Ask provider** — `src/main/providers/optix-cloud.ts` reuses `runAnthropicPrompt` from the direct Anthropic adapter, just with a relay-bound SDK client (Bearer token instead of `x-api-key`).
+- **Access agent** — `src/main/automation/agent-providers/optix-cloud.ts` extends the Anthropic agent adapter, swapping the SDK client at `init()` and exposing `refreshCredential()` so long-running conversations don't 401 when the Firebase ID token expires.
+- **Magic-link sign-in** — `src/main/auth/loopback-server.ts` binds a one-shot 127.0.0.1 HTTP listener; `src/main/ipc/auth.ipc.ts` orchestrates. Renderer-side Firebase SDK runs in `src/renderer/widget/firebase.ts`.
+- **Stripe checkout + management** — `src/main/ipc/stripe.ipc.ts` opens Checkout in the user's default browser via `shell.openExternal`, reuses the loopback server for the post-payment redirect, and proxies switch/cancel/reactivate calls to the relay's `updateSubscription` Cloud Function.
+- **Settings UI** — `src/renderer/widget/components/SettingsPanel.tsx` (`OptixCloudSection`, `ActivePlanView`, `PricingCard`) renders sign-in / pricing / plan-management views; subscription state comes via a Firestore `onSnapshot` listener so webhook-driven changes flip the UI without polling.
+
+See the [Optix-Cloud](https://github.com/joshxjames/Optix-Cloud) repo for the relay, webhook handlers, and Firestore rules.
 
 ## Security posture
 

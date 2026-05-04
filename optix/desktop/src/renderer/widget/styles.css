@@ -1,16 +1,79 @@
 :root {
+  /* --- Dark theme (default) ------------------------------------- */
   --bg: rgba(16, 18, 24, 0.92);
   --bg-solid: #101218;
+  /* Surfaces stacked above the main bg — response cards, attachment
+     tray, settings panel sections. Subtle lift via lighter overlay. */
+  --bg-subtle: rgba(255, 255, 255, 0.02);
+  --bg-elevated: rgba(255, 255, 255, 0.03);
+  --bg-elevated-strong: rgba(255, 255, 255, 0.06);
+  /* Form-control surface: text inputs, select boxes, the prompt box. */
+  --bg-input: rgba(255, 255, 255, 0.04);
+  /* Subtle interaction overlays — keyed off the surface tone, so they
+     stay subtle in both themes. */
+  --hover: rgba(255, 255, 255, 0.04);
+  --pressed: rgba(255, 255, 255, 0.08);
+  /* Modal-y scrims that should always be dark (privacy / approval
+     overlays). Stays dark in both themes by design. */
+  --scrim: rgba(0, 0, 0, 0.5);
+  --shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+  /* "Recessed" surface — the prompt-input frame, code blocks,
+     attachment-tray slots. Reads as a darker pocket in dark mode and
+     a slightly grey pocket in light mode (a 0.25 black overlay would
+     be muddy on white). */
+  --bg-recess: rgba(0, 0, 0, 0.25);
+
   --fg: #f5f6f8;
   --muted: #9aa3b2;
   --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+
   --accent: #6d8cff;
   --accent-hover: #5a7bff;
+  --accent-on: #ffffff;            /* text on top of accent fills */
+  --accent-soft: rgba(109, 140, 255, 0.12);
   --danger: #ef4444;
+  --danger-soft: rgba(239, 68, 68, 0.18);
   --warn: #f59e0b;
+  --warn-soft: rgba(245, 158, 11, 0.18);
   --ok: #22c55e;
+  --ok-soft: rgba(34, 197, 94, 0.18);
+
   --radius: 10px;
   --radius-sm: 6px;
+}
+
+/* --- Light theme ----------------------------------------------------
+   Triggered by `data-theme="light"` on the document root (the renderer
+   sets this from the user's settings). All variables that affect
+   surfaces / text / borders flip; the brand accent + status colors stay
+   the same hue, just over a paler surface. */
+:root[data-theme='light'] {
+  --bg: rgba(248, 249, 252, 0.94);
+  --bg-solid: #f5f6f9;
+  --bg-subtle: rgba(0, 0, 0, 0.02);
+  --bg-elevated: rgba(0, 0, 0, 0.03);
+  --bg-elevated-strong: rgba(0, 0, 0, 0.06);
+  --bg-input: rgba(0, 0, 0, 0.04);
+  --hover: rgba(0, 0, 0, 0.05);
+  --pressed: rgba(0, 0, 0, 0.09);
+  /* Scrim stays dark — modal dimming reads correctly over a light
+     widget too. */
+  --scrim: rgba(0, 0, 0, 0.4);
+  --shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  --bg-recess: rgba(0, 0, 0, 0.05);
+
+  --fg: #1a1c20;
+  --muted: #5b6371;
+  --border: rgba(0, 0, 0, 0.1);
+  --border-strong: rgba(0, 0, 0, 0.18);
+
+  /* Accent stays the same; soft variants get a touch more saturation
+     so they remain visible against a light surface. */
+  --accent-soft: rgba(109, 140, 255, 0.16);
+  --danger-soft: rgba(239, 68, 68, 0.14);
+  --warn-soft: rgba(245, 158, 11, 0.18);
+  --ok-soft: rgba(34, 197, 94, 0.16);
 }
 
 * { box-sizing: border-box; }
@@ -168,7 +231,7 @@ html, body {
   /* Single-source gap between body and prompt field — body itself has
      no bottom padding, so this margin-top is the entire visual spacer. */
   margin: 8px 12px 0;
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--bg-recess);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   display: flex;
@@ -344,8 +407,8 @@ html, body {
   bottom: 0;
   left: 0;
   right: 0;
-  height: 24px;
-  margin-top: -24px;
+  height: 12px;
+  margin-top: -12px;
   flex-shrink: 0;
   pointer-events: none;
   background: linear-gradient(
@@ -370,6 +433,50 @@ html, body {
   font-size: 12px;
 }
 
+/* Optix Cloud billing-error inline card. Replaces the plain
+   `.widget__error` toast when the failure is recoverable with one
+   click (subscription, allowance, payment-method). Slightly warmer
+   tone than the red error so the user reads "fix this" instead of
+   "something broke". */
+.upgrade-prompt {
+  padding: 10px 12px;
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+.upgrade-prompt__title {
+  font-weight: 600;
+  color: var(--fg);
+  font-size: 13px;
+}
+.upgrade-prompt__body {
+  color: var(--fg);
+  line-height: 1.45;
+}
+.upgrade-prompt__actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+.upgrade-prompt__cta {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-on);
+  font-weight: 600;
+}
+.upgrade-prompt__cta:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+.upgrade-prompt__error {
+  font-size: 11px;
+  color: var(--danger);
+}
+
 .widget__loading {
   padding: 20px;
   text-align: center;
@@ -379,7 +486,7 @@ html, body {
 /* Buttons */
 .btn {
   border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-input);
   color: var(--fg);
   padding: 6px 10px;
   border-radius: var(--radius-sm);
@@ -388,7 +495,7 @@ html, body {
   font-size: 12px;
   transition: background 0.12s, border-color 0.12s, opacity 0.12s;
 }
-.btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
+.btn:hover:not(:disabled) { background: var(--pressed); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn--primary {
@@ -473,7 +580,7 @@ html, body {
 /* Mode switch */
 .mode-switch {
   display: inline-flex;
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--bg-recess);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 2px;
@@ -539,7 +646,7 @@ html, body {
 .response {
   margin-top: 8px;
   padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   display: flex;
@@ -620,7 +727,7 @@ html, body {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 6px 8px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--bg-subtle);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -859,6 +966,197 @@ html, body {
   flex-direction: column;
   gap: 6px;
 }
+
+/* === Optix Cloud pricing cards (in Settings) ===
+   Two cards stacked vertically inside the Settings panel — the panel's
+   ~360px width can't reasonably fit them side-by-side without
+   cramping. Each card is a small visual frame around features +
+   Subscribe button. Pro is highlighted with the accent border so the
+   recommended plan reads immediately. */
+/* === Active-plan view === */
+/* Vertical stack of: email → plan + tokens + renews → prompt → actions.
+   Matches the natural reading order — identity, then state, then any
+   nudges, then controls. */
+.settings-panel__plan-email {
+  /* Same size as the toggle-row text (12px) so the email reads as
+     normal in-panel content rather than a heading; bold weight is
+     what marks it as the section's identity anchor. */
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.settings-panel__plan-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+/* Header row puts the email on the left and the action buttons on
+   the right. `space-between` lets the buttons cluster without taking
+   over the whole row even when the email is short. */
+.settings-panel__plan-row--header {
+  justify-content: space-between;
+  align-items: center;
+}
+.settings-panel__plan-tier {
+  font-size: 12px;
+  color: var(--fg);
+  font-weight: 500;
+  /* `cursor: help` is the universal "this thing has a tooltip" affordance —
+     pairs with the inline ⓘ glyph so users get both visual and pointer
+     hints that hovering reveals the renewal date. */
+  cursor: help;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.settings-panel__plan-tier-info {
+  font-size: 11px;
+  color: var(--muted);
+  /* The ⓘ glyph sits a hair lower than baseline by default; nudge up
+     so it visually centers with the surrounding text. */
+  position: relative;
+  top: -1px;
+}
+/* Inline usage counter — shown both inline next to the plan tier (in
+   the active-plan view) and historically next to Sign Out. Tabular
+   nums keeps live updates from jiggling the surrounding layout. */
+.settings-panel__usage {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* Row 3: upgrade nudge or cancellation warning. Tone variants paint
+   a subtle background so the message reads as a contextual hint
+   rather than a generic status line. */
+.settings-panel__plan-prompt {
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+}
+.settings-panel__plan-prompt--info {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+.settings-panel__plan-prompt--warn {
+  background: var(--warn-soft);
+  color: var(--fg);
+}
+/* Row 4: action buttons. Update Payment Method · Upgrade Plan · Cancel
+   Plan · Sign out. The labels are long enough that all four together
+   don't fit on a panel-width row at the default `.btn--small` size,
+   and `flex-wrap` makes Sign Out leak onto a second row with awkward
+   space-before-it from `justify-content: flex-end`. We compact the
+   buttons here so they fit on one row, and bias `space-between` so
+   Update Payment Method anchors left and Sign Out anchors right. */
+.settings-panel__plan-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: space-between;
+  align-items: center;
+}
+.settings-panel__plan-actions .btn {
+  padding: 4px 7px;
+  font-size: 11px;
+  /* Belt-and-braces — without this a button label can word-wrap onto
+     two lines if its text crosses some browser-internal threshold,
+     which subtly bumps the row height. */
+  white-space: nowrap;
+}
+
+.settings-panel__pricing-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.settings-panel__pricing-status {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-panel__pricing-status strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+.settings-panel__pricing-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+}
+.pricing-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pricing-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: var(--bg-elevated);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pricing-card--featured {
+  border-color: var(--accent);
+  /* Subtle accent wash to draw the eye to the recommended plan
+     without being loud. */
+  background: var(--accent-soft);
+}
+.pricing-card__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pricing-card__name {
+  font-size: 14px;
+  font-weight: 600;
+}
+.pricing-card__price {
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.pricing-card__blurb {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.pricing-card__features {
+  margin: 0;
+  padding: 0 0 0 16px;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  line-height: 1.45;
+}
+.pricing-card__cta {
+  /* Accent fill for the primary action — matches the look of other
+     `btn` instances elsewhere but emphasized for conversion. */
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-on);
+  padding: 8px 12px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+.pricing-card__cta:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
 .settings-panel__label {
   font-size: 11px;
   color: var(--muted);
@@ -970,7 +1268,7 @@ html, body {
    (6px 8px 4px) since the wrap supplies the surrounding frame. */
 .widget__prompt-wrap .attachment-tray {
   padding: 6px 8px 4px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--border);
 }
 .attachment-tray {
   display: flex;
@@ -1100,7 +1398,7 @@ html, body {
   font-size: 10px;
   color: var(--muted);
   padding: 2px 5px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-elevated-strong);
   border-radius: 999px;
   white-space: nowrap;
   max-width: 140px;
@@ -1152,7 +1450,7 @@ html, body {
 }
 .choice-prompt__option {
   text-align: left;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 6px 10px;
@@ -1183,7 +1481,7 @@ html, body {
 .choice-prompt__freeform-input {
   flex: 1;
   padding: 6px 8px;
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--bg-recess);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--fg);
@@ -1217,7 +1515,7 @@ html, body {
 .plan-gate__body {
   margin: 0;
   padding: 8px 10px;
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--bg-recess);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--fg);
@@ -1298,7 +1596,7 @@ html, body {
   width: 100%;
   margin-bottom: 12px;
   padding: 6px 10px;
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--bg-recess);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--fg);
@@ -1424,7 +1722,7 @@ html, body {
 }
 .routines__field-input,
 .routines__field-textarea {
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--bg-recess);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--fg);
@@ -1460,7 +1758,7 @@ html, body {
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   font-size: 12px;
@@ -1656,7 +1954,7 @@ html, body {
 .plan-view__content {
   margin: 0;
   padding: 10px 12px;
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--bg-recess);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   font: inherit;
@@ -1891,7 +2189,7 @@ html, body {
   display: block;
   width: 100%;
   text-align: left;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--bg-subtle);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 8px 10px;
@@ -2029,7 +2327,7 @@ html, body {
   height: 48px;
   border-radius: var(--radius-sm);
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-input);
   border: 1px solid var(--border);
   display: flex;
   align-items: center;
@@ -2042,7 +2340,7 @@ html, body {
 }
 .chat-history__agent {
   padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--bg-subtle);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   font-size: 12px;
@@ -2066,7 +2364,7 @@ html, body {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 10px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--bg-subtle);
 }
 /* `.audit__detail-row` style is shared with `.audit__list-row` —
    see the merged rule near the top of this file. Class kept here so
