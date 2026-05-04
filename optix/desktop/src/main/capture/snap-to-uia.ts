@@ -5,9 +5,16 @@ import type { UiaElement } from './uia';
 // "OK" button could exist on the other side of the window. Wide enough to
 // tolerate the model's loose initial coordinates.
 const MAX_CENTER_DIST_PX = 600;
-const MAX_LEV_DISTANCE = 3;
-const MIN_FUZZY_RATIO = 0.65;
-const MIN_TOKEN_JACCARD = 0.5; // 50% token overlap — see scoreLabelMatch
+// Tighter thresholds (lev 3 → 2, ratio 0.65 → 0.7, jaccard 0.5 → 0.6) so
+// weak/ambiguous UIA matches don't lock OCR out of having a turn. Previously
+// a 0.65-ratio fuzzy hit on a wrong-side-of-the-window control would snap
+// the region and skip OCR entirely; with the bar raised, those marginal
+// cases fall through and OCR (which has its own spatial+text gates) gets
+// to override. Strong matches (containment, ≥0.75 jaccard) still pass via
+// the strong-match shortcut below.
+const MAX_LEV_DISTANCE = 2;
+const MIN_FUZZY_RATIO = 0.7;
+const MIN_TOKEN_JACCARD = 0.6;
 
 export function normalize(s: string): string {
   // Strip Windows accelerator ampersands ("&File" -> "File"), lowercase, then

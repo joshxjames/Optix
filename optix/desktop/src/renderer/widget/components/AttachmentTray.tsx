@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 export type StagedAttachment = {
   id: string;
@@ -36,8 +36,6 @@ function AttachmentChip({
   onRemove: (id: string) => void;
 }) {
   const [imgFailed, setImgFailed] = useState(false);
-  // Defensive cleanup if the chip unmounts while preview is still loading.
-  useEffect(() => () => setImgFailed(false), []);
   return (
     <span className="attachment-tray__chip" title={attachment.filename}>
       {imgFailed ? (

@@ -580,6 +580,21 @@ export const anthropicAgentAdapter: AgentProviderAdapter<AnthropicState> = {
     > = [];
     // Walk the model's emitted order so the user message mirrors it.
     for (const id of state.pendingToolUseIds) {
+      // Defend against a renderer that pairs a screenshot with a
+      // non-computer action — e.g. file/shell tool results don't
+      // semantically carry a screenshot, and feeding one back as a
+      // tool_result image would confuse the model into thinking the
+      // file/shell call returned an image. Drop the bytes; keep the
+      // text/error path.
+      const action = state.pendingActions.get(id);
+      const r0 = byId.get(id);
+      if (r0?.screenshotBytes && action && action.tool !== 'computer') {
+        console.warn(
+          `[optix-anthropic-cu] dropping screenshot bytes paired with non-computer action (tool=${action.tool}, id=${id}).`,
+        );
+        delete (r0 as { screenshotBytes?: Uint8Array }).screenshotBytes;
+        delete (r0 as { screenshotMimeType?: string }).screenshotMimeType;
+      }
       const parseErr = state.pendingErrors.get(id);
       if (parseErr) {
         blocks.push({

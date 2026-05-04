@@ -10,7 +10,12 @@ export type UiaElement = {
   bounds: { x: number; y: number; width: number; height: number };
 };
 
-const UIA_TIMEOUT_MS = 5000;
+// Doubled from 5s — modern Electron-based apps (VS Code, Slack, Teams) and
+// browsers with many tabs can blow past the node cap before completing,
+// and 5s left no headroom for the PowerShell child to spin up + load
+// UIAutomationClient on cold cache. 8s preserves the doubling pattern.
+const UIA_TIMEOUT_MS = 8000;
+const UIA_NODE_CAP = 5000;
 
 // Script for walking the window directly under a screen point. Used by
 // click-snap so we get the UIA tree of the window the click would land
@@ -454,13 +459,32 @@ export async function getUiaElements(): Promise<UiaElement[]> {
       stderr += chunk.toString('utf8');
     });
 
+    // Pull the most-useful identifier out of the PS stderr breadcrumbs.
+    // The script writes lines like `uia chose: <title>` / `uia walking:
+    // <root-name>` / `uia fg name=[<name>]` — any of those is enough to
+    // tell the user *which* app is being slow.
+    const extractWindowTitle = (s: string): string | null => {
+      const m =
+        s.match(/uia chose:\s*([^\r\n]+)/) ??
+        s.match(/uia walking:\s*([^\r\n]+)/) ??
+        s.match(/uia fg name=\[([^\]]*)\]/);
+      const t = m?.[1]?.trim();
+      return t && t.length > 0 ? t : null;
+    };
+
     const timer = setTimeout(() => {
       try {
         proc.kill();
       } catch {
         // best-effort
       }
-      console.warn('[optix-timing] uia timed out');
+      // Surface the foreground app (when we know it) so the user can tell
+      // *which* window is blowing past the timeout — otherwise "uia timed
+      // out" gives them no actionable signal.
+      const title = extractWindowTitle(stderr);
+      console.warn(
+        `[optix-timing] uia timed out after ${UIA_TIMEOUT_MS}ms${title ? ` (window: ${title})` : ''}`,
+      );
       finish([]);
     }, UIA_TIMEOUT_MS);
 
@@ -531,6 +555,16 @@ export async function getUiaElements(): Promise<UiaElement[]> {
             height: Math.round(height),
           },
         });
+      }
+      // Node-cap diagnostic: the PS script silently truncates at UIA_NODE_CAP
+      // entries, so the parsed JSON length === cap is a strong signal that
+      // the app's tree exceeded our budget. Surface the foreground title
+      // (when known) so the user can tell which app caused the slowness.
+      if (arr.length >= UIA_NODE_CAP) {
+        const title = extractWindowTitle(stderr);
+        console.warn(
+          `[optix-timing] uia node cap (${UIA_NODE_CAP}) hit${title ? ` — window: ${title}` : ''}; tree truncated`,
+        );
       }
       console.log(`[optix-timing] uia elements=${elements.length} ms=${ms}`);
       finish(elements);

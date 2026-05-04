@@ -523,6 +523,19 @@ export const openaiAgentAdapter: AgentProviderAdapter<OpenAIState> = {
     const resp = await postResponses(state.apiKey, body, abortSignal);
     const apiMs = Math.round(performance.now() - t0);
 
+    // Truncation breadcrumb — when the Responses API has to drop earlier
+    // input to fit context (we set `truncation: 'auto'` so this is on),
+    // it surfaces an `incomplete_details.reason` of 'max_input_tokens'
+    // or similar. Logging the loop signature lets a user reporting weird
+    // mid-task amnesia point at a specific turn so we can confirm.
+    const incomplete = (resp as { incomplete_details?: { reason?: string }; status?: string })
+      .incomplete_details;
+    if (incomplete?.reason || resp.status === 'incomplete') {
+      console.warn(
+        `[optix-openai-cu] response was truncated/incomplete — loopSig=${state.modelId}@${state.imageWidth}x${state.imageHeight} reason=${incomplete?.reason ?? resp.status}`,
+      );
+    }
+
     // Echo the assistant's full output array into our running input so
     // the next request includes the same context.
     const output: ResponseItem[] = Array.isArray(resp.output) ? resp.output : [];
@@ -597,10 +610,32 @@ export const openaiAgentAdapter: AgentProviderAdapter<OpenAIState> = {
     opts?: { extraUserText?: string },
   ): void {
     const byId = new Map(results.map((r) => [r.toolUseId, r]));
+    // Mismatch between renderer-supplied results and the call ids we
+    // expect means an orphaned tool_result would otherwise be silently
+    // dropped. Fail loudly — the loop driver should never reach here
+    // with a count that doesn't line up with `pendingCallIds`.
+    if (byId.size !== state.pendingCallIds.length) {
+      throw new Error(
+        `OpenAI adapter: result-count mismatch — expected ${state.pendingCallIds.length} results, got ${byId.size}.`,
+      );
+    }
     for (const id of state.pendingCallIds) {
       const kind = state.pendingCallKind.get(id) ?? 'function';
       const parseErr = state.pendingErrors.get(id);
       const r = byId.get(id);
+
+      // Defend against a renderer that pairs a screenshot with a
+      // non-computer action — file/shell results have no semantic for
+      // a screenshot, and feeding one back to the model would mislead
+      // it about what the call returned. Drop the bytes; keep text.
+      const action = state.pendingActions.get(id);
+      if (r?.screenshotBytes && action && action.tool !== 'computer') {
+        console.warn(
+          `[optix-openai-cu] dropping screenshot bytes paired with non-computer action (tool=${action.tool}, id=${id}).`,
+        );
+        delete (r as { screenshotBytes?: Uint8Array }).screenshotBytes;
+        delete (r as { screenshotMimeType?: string }).screenshotMimeType;
+      }
 
       if (kind === 'computer') {
         // computer_call_output: `output` is an input_image (success) or

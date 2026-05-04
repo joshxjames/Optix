@@ -119,6 +119,18 @@ function ensureChild(): ChildProcessWithoutNullStreams {
     }
   });
 
+  // Surface stderr so PowerShell parse errors / Add-Type failures
+  // don't disappear silently — previously `setEncoding('utf8')` was
+  // the only handling and the data event had no listener, leaving
+  // diagnostics invisible during debugging.
+  proc.stderr.on('data', (chunk: string) => {
+    for (const line of chunk.split(/\r?\n/)) {
+      if (line.trim().length > 0) {
+        console.warn(`[optix-fg] powershell stderr: ${line}`);
+      }
+    }
+  });
+
   proc.on('exit', () => {
     child = null;
     pendingResolver?.('ERR ps-exited');

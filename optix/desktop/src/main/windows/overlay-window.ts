@@ -56,7 +56,11 @@ function createOverlayWindow(): BrowserWindow {
 
   // Hide from screen capture so the overlay's own boxes never feed back into
   // the next analysis frame.
-  win.setContentProtection(true);
+  // Windows-only API; no-op on macOS/Linux but worth the explicit guard so
+  // future Electron versions can't surprise us with new behaviour.
+  if (process.platform === 'win32') {
+    win.setContentProtection(true);
+  }
 
   // Hard-deny any external navigation or new windows from the renderer.
   // Only http(s) URLs reach the OS; all other schemes are dropped by
@@ -98,7 +102,11 @@ export async function showOverlay(payload: OverlayRenderPayload): Promise<void> 
       overlayWindow.setOpacity(1);
       // Re-assert content protection — Electron has a known bug where
       // WDA_EXCLUDEFROMCAPTURE on transparent windows occasionally drops.
-      overlayWindow.setContentProtection(true);
+      // Windows-only API; no-op on macOS/Linux but worth the explicit guard
+      // so future Electron versions can't surprise us with new behaviour.
+      if (process.platform === 'win32') {
+        overlayWindow.setContentProtection(true);
+      }
     }
     return;
   }
@@ -115,7 +123,11 @@ export async function showOverlay(payload: OverlayRenderPayload): Promise<void> 
     setTimeout(() => {
       if (win.isDestroyed()) return;
       win.setOpacity(1);
-      win.setContentProtection(true);
+      // Windows-only API; no-op on macOS/Linux but worth the explicit guard
+      // so future Electron versions can't surprise us with new behaviour.
+      if (process.platform === 'win32') {
+        win.setContentProtection(true);
+      }
     }, 32);
   });
 }

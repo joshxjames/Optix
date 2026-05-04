@@ -8,8 +8,13 @@ import type { StoredPlan } from '@shared/schemas';
 // renderer can't smuggle unexpected fields through to the persisted
 // plan file or to the changed-broadcast (which fans out to every
 // BrowserWindow).
+// 1 MB cap on plan content — plans are Markdown bullet lists; anything
+// larger is almost certainly a bug or a compromised renderer trying to
+// blow up the persisted file. Without this bound, a huge string would
+// be written to disk and broadcast to every BrowserWindow on every
+// save.
 const SavePlanRequestSchema = z.object({
-  content: z.string().min(1),
+  content: z.string().min(1).max(1_000_000),
   rationale: z.string().optional(),
   loopId: z.string().optional(),
 });

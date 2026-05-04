@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { ModelResponseSchema, type ModelResponse } from '@shared/schemas';
-import { buildSystemPrompt, extractJson, imageBytesToBase64, stripCitations, type Provider, type PromptInput } from './base';
+import { buildSystemPrompt, extractJson, imageBytesToBase64, stripCitations, stripCitationsFromParsed, type Provider, type PromptInput } from './base';
 import { ddgSearch, formatSearchResultsForLlm } from './web-search';
 
 type AnthropicImageMediaType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
@@ -93,7 +93,15 @@ async function streamAndCollect(
     }
     if (event.type === 'content_block_stop') {
       const idx = (event as any).index;
-      if (firstTextBlockIndex !== null && idx === firstTextBlockIndex) {
+      // Only treat the stop as canonical-block close when we have a
+      // numeric index — a malformed event with a missing index would
+      // otherwise be compared via `null === firstTextBlockIndex` and
+      // skip the gate.
+      if (
+        firstTextBlockIndex !== null &&
+        typeof idx === 'number' &&
+        idx === firstTextBlockIndex
+      ) {
         firstTextBlockClosed = true;
       }
     }
@@ -104,7 +112,16 @@ async function streamAndCollect(
       // Only forward deltas from the canonical first text block.
       const idx = (event as any).index;
       if (firstTextBlockClosed) continue;
-      if (firstTextBlockIndex !== null && idx !== firstTextBlockIndex) continue;
+      // When `idx` is missing/non-numeric we treat the chunk as the
+      // canonical block rather than silently dropping it — losing tokens
+      // is worse than mixing a stray block once.
+      if (
+        firstTextBlockIndex !== null &&
+        typeof idx === 'number' &&
+        idx !== firstTextBlockIndex
+      ) {
+        continue;
+      }
       const text = stripCitations((event as any).delta.text as string);
       if (text) onChunk?.(text);
     }
@@ -170,9 +187,11 @@ export async function runAnthropicPrompt(
         throw new Error('Anthropic response contained no text block.');
       }
 
-      // Strip Anthropic's <cite> tags before parsing — they appear inside
-      // the JSON's string fields and would otherwise pollute answer / steps.
-      const raw = extractJson(stripCitations(textBlock.text));
+      // Strip Anthropic's <cite> tags AFTER parse — running the strip
+      // over the raw JSON string risked a close tag straddling a string
+      // boundary and corrupting structure. Walking parsed text fields
+      // is structurally safe.
+      const raw = stripCitationsFromParsed(extractJson(textBlock.text));
       return ModelResponseSchema.parse(raw);
     }
 
@@ -223,9 +242,9 @@ export async function runAnthropicPrompt(
         throw new Error('Anthropic response contained no text block.');
       }
 
-      // Strip Anthropic's <cite> tags before parsing — they appear inside
-      // the JSON's string fields and would otherwise pollute answer / steps.
-      const raw = extractJson(stripCitations(textBlock.text));
+      // Strip Anthropic's <cite> tags AFTER parse — see non-search path
+      // for rationale.
+      const raw = stripCitationsFromParsed(extractJson(textBlock.text));
       return ModelResponseSchema.parse(raw);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -255,6 +274,12 @@ export async function runAnthropicPrompt(
     ];
 
     const MAX_ITERATIONS = 5;
+    // Per-iteration cap counts ROUNDS of model calls; this parallel cap
+    // counts individual tool_use blocks emitted across the loop. A model
+    // that emits many tool_uses per round can otherwise exhaust quota
+    // (and our tolerance) without tripping MAX_ITERATIONS.
+    const MAX_TOOL_CALLS = 10;
+    let toolCallCount = 0;
     for (let i = 0; i < MAX_ITERATIONS; i++) {
       // Intermediate tool-use turns: keep using non-streaming since we just
       // need the tool_use block, not any user-visible text. Switch to
@@ -305,10 +330,31 @@ export async function runAnthropicPrompt(
         if (toolUseBlocks.length === 0) {
           throw new Error('Anthropic signalled tool_use but returned no tool_use block.');
         }
+        toolCallCount += toolUseBlocks.length;
+        if (toolCallCount > MAX_TOOL_CALLS) {
+          throw new Error(
+            `Anthropic web_search loop emitted ${toolCallCount} tool_use blocks (cap ${MAX_TOOL_CALLS}); aborting.`,
+          );
+        }
 
         const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
         for (const tu of toolUseBlocks) {
-          const query = ((tu.input as any)?.query ?? '') as string;
+          const rawQuery = (tu.input as any)?.query;
+          // A model that emits a tool_use without a usable `query` would
+          // otherwise call ddgSearch with `''` — wasting a request and
+          // returning empty results that the model can't tell from a
+          // genuine zero-hit search. Synthesise an is_error tool_result
+          // so the model can self-correct on the next turn.
+          if (typeof rawQuery !== 'string' || rawQuery.length === 0) {
+            toolResults.push({
+              type: 'tool_result',
+              tool_use_id: tu.id,
+              content: 'Missing or empty `query` argument — provide a non-empty string.',
+              is_error: true,
+            });
+            continue;
+          }
+          const query = rawQuery;
           input.onSearch?.(query);
           let toolResultText: string;
           try {
@@ -340,18 +386,18 @@ export async function runAnthropicPrompt(
         if (!textBlock || textBlock.type !== 'text') {
           throw new Error('Anthropic response contained no text block.');
         }
-        // Strip Anthropic's <cite> tags before parsing — they appear inside
-      // the JSON's string fields and would otherwise pollute answer / steps.
-      const raw = extractJson(stripCitations(textBlock.text));
+        // Strip Anthropic's <cite> tags AFTER parse — see non-search
+      // path for rationale.
+      const raw = stripCitationsFromParsed(extractJson(textBlock.text));
         return ModelResponseSchema.parse(raw);
       }
 
       // Unexpected stop reason (max_tokens, etc.) — try to parse whatever text we got.
       const textBlock = finalMessage.content.find(b => b.type === 'text');
       if (textBlock && textBlock.type === 'text') {
-        // Strip Anthropic's <cite> tags before parsing — they appear inside
-      // the JSON's string fields and would otherwise pollute answer / steps.
-      const raw = extractJson(stripCitations(textBlock.text));
+        // Strip Anthropic's <cite> tags AFTER parse — see non-search
+      // path for rationale.
+      const raw = stripCitationsFromParsed(extractJson(textBlock.text));
         return ModelResponseSchema.parse(raw);
       }
 

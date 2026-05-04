@@ -11,10 +11,14 @@ type Props = {
  * Renders the integer second count only — callers supply surrounding text.
  */
 function ElapsedSecondsImpl({ since }: Props) {
+  // Initialiser computes the synchronous value on first render so we
+  // don't render once with 0 then immediately re-render with the real
+  // count on mount. (The interval below handles ongoing updates and
+  // the `since` change case — its first tick will replace the stale
+  // state if the parent reuses this instance with a new start time.)
   const [elapsed, setElapsed] = useState(() => Math.floor((Date.now() - since) / 1000));
 
   useEffect(() => {
-    setElapsed(Math.floor((Date.now() - since) / 1000));
     const interval = setInterval(() => {
       setElapsed(Math.floor((Date.now() - since) / 1000));
     }, 1000);

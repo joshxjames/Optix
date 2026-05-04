@@ -129,10 +129,13 @@ app.whenReady().then(() => {
 
   // Displays can be reconfigured mid-session (monitor plugged/unplugged).
   // Invalidate the cached source ID so the next capture re-enumerates fresh.
-  // display-metrics-changed fires too often (cursor crossings, DPI probes) —
-  // only invalidate on actual display connect/disconnect.
   screen.on('display-added', invalidateSourceIdCache);
   screen.on('display-removed', invalidateSourceIdCache);
+  // DPI changes (Win+P, dock/undock) need cache reset too — bounds change
+  // but the source ID becomes stale. display-metrics-changed catches
+  // resolution / scale-factor / work-area shifts that display-added
+  // and display-removed don't.
+  screen.on('display-metrics-changed', invalidateSourceIdCache);
 });
 
 app.on('will-quit', () => {

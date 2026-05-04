@@ -68,6 +68,20 @@ export const PromptInput = forwardRef<PromptInputHandle, Props>(function PromptI
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
 
+  // Latest-callback refs so long-lived callbacks (the imperative
+  // handle, the rAF in `replaceRange`, the `reportCursor` helper)
+  // always invoke the most recent prop. Without this, parents that
+  // rebind `onCursorChange`/`onChange`/`onIntercept` between renders
+  // would see stale closures fire after async boundaries.
+  const latestOnCursorChangeRef = useRef(onCursorChange);
+  const latestOnChangeRef = useRef(onChange);
+  const latestOnInterceptRef = useRef(onIntercept);
+  useEffect(() => {
+    latestOnCursorChangeRef.current = onCursorChange;
+    latestOnChangeRef.current = onChange;
+    latestOnInterceptRef.current = onIntercept;
+  });
+
   useEffect(() => {
     textareaRef.current?.focus();
   }, []);
@@ -77,7 +91,7 @@ export const PromptInput = forwardRef<PromptInputHandle, Props>(function PromptI
     (): PromptInputHandle => ({
       replaceRange: (start, end, replacement) => {
         const next = value.slice(0, start) + replacement + value.slice(end);
-        onChange(next);
+        latestOnChangeRef.current(next);
         // Defer the cursor placement until React re-renders with the
         // new value, otherwise the textarea's selection would be
         // measured against the old string.
@@ -87,12 +101,12 @@ export const PromptInput = forwardRef<PromptInputHandle, Props>(function PromptI
           if (!ta) return;
           ta.focus();
           ta.setSelectionRange(targetCursor, targetCursor);
-          onCursorChange?.(targetCursor);
+          latestOnCursorChangeRef.current?.(targetCursor);
         });
       },
       focus: () => textareaRef.current?.focus(),
     }),
-    [value, onChange, onCursorChange],
+    [value],
   );
 
   // Notify the parent on every cursor / selection change so the
@@ -102,12 +116,14 @@ export const PromptInput = forwardRef<PromptInputHandle, Props>(function PromptI
   const reportCursor = (): void => {
     const ta = textareaRef.current;
     if (!ta) return;
-    onCursorChange?.(ta.selectionStart ?? 0);
+    latestOnCursorChangeRef.current?.(ta.selectionStart ?? 0);
   };
   useEffect(() => {
     // After an external value update (e.g. setPrompt from the slash
     // pick), the cursor might still report the old position for one
-    // frame. Re-sync on every value change.
+    // frame. Re-sync on every value change. `reportCursor` reads the
+    // latest callback through the ref so omitting it from deps is
+    // safe and intentional.
     reportCursor();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
@@ -161,14 +177,14 @@ export const PromptInput = forwardRef<PromptInputHandle, Props>(function PromptI
         }
         value={value}
         onChange={(e) => {
-          onChange(e.target.value);
+          latestOnChangeRef.current(e.target.value);
           // Report cursor on next tick — the textarea's
           // selectionStart is updated synchronously after the input
           // event, but doing it here keeps the contract simple.
           reportCursor();
         }}
         onKeyDown={(e) => {
-          if (onIntercept?.(e)) {
+          if (latestOnInterceptRef.current?.(e)) {
             e.preventDefault();
             return;
           }

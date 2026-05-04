@@ -168,6 +168,33 @@ export function stripCitations(text: string): string {
   return text.replace(/<\/?cite[^>]*>/g, '');
 }
 
+// Walk a parsed ModelResponse-shaped object and strip <cite> tags from
+// the user-facing text fields (`answer`, `intent`, plus per-step `text`
+// and `warnings`). Why post-parse instead of running `stripCitations`
+// over the raw JSON string: a `<cite>` close tag landing on a string
+// boundary inside the JSON could otherwise corrupt the structure, and
+// the regex has no way to distinguish "inside a JSON string" from
+// "between fields". Running it on already-parsed values sidesteps that
+// entirely. Mutates in place; returns the same object for chaining.
+export function stripCitationsFromParsed(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object') return raw;
+  const obj = raw as Record<string, unknown>;
+  if (typeof obj.answer === 'string') obj.answer = stripCitations(obj.answer);
+  if (typeof obj.intent === 'string') obj.intent = stripCitations(obj.intent);
+  if (Array.isArray(obj.warnings)) {
+    obj.warnings = obj.warnings.map((w) => (typeof w === 'string' ? stripCitations(w) : w));
+  }
+  if (Array.isArray(obj.steps)) {
+    for (const step of obj.steps) {
+      if (step && typeof step === 'object') {
+        const s = step as Record<string, unknown>;
+        if (typeof s.text === 'string') s.text = stripCitations(s.text);
+      }
+    }
+  }
+  return obj;
+}
+
 // Helpers for image-bytes → provider-specific format conversion. We pass
 // raw `Uint8Array` over IPC (faster than base64 string) and base64-encode
 // once here in main when constructing each request. Node's
@@ -194,6 +221,9 @@ export function extractJson(text: string): unknown {
     throw new Error('Model response did not contain a JSON object.');
   }
   const jsonSlice = trimmed.slice(firstBrace, lastBrace + 1);
+  // Bound the parse — a runaway model that streams hundreds of KB of
+  // braces would otherwise let `JSON.parse` allocate without limit.
+  if (jsonSlice.length > 100_000) throw new Error('Response payload too large');
   try {
     return JSON.parse(jsonSlice);
   } catch (err) {

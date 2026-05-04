@@ -146,10 +146,18 @@ async function kimiStreaming(
   // chunk, after stop, when `stream_options.include_usage` is true. We
   // pluck whichever chunk has it and report once at the end.
   let finalUsage: OpenAI.CompletionUsage | undefined;
+  // Hard accumulation cap — a misbehaving model that streams indefinitely
+  // would otherwise grow `accumulated` until V8 OOMs the renderer.
+  const MAX_ACCUMULATED = 10_000_000; // 10 MB
   for await (const chunk of stream) {
     const delta = chunk.choices[0]?.delta?.content ?? '';
     if (delta) {
       accumulated += delta;
+      if (accumulated.length > MAX_ACCUMULATED) {
+        throw new Error(
+          'Kimi response too large (>10 MB streamed) — aborting before exhausting memory.',
+        );
+      }
       input.onChunk?.(delta);
     }
     const reason = chunk.choices[0]?.finish_reason;

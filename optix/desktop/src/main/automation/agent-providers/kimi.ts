@@ -594,8 +594,19 @@ export const kimiAgentAdapter: AgentProviderAdapter<KimiState> = {
     const uiaElements = await uiaPromise;
     const uiaNote = formatUiaForPrompt(uiaElements);
     // Build a request-time messages array with the system prompt
-    // augmented by the current UIA snapshot. We don't persist the
-    // augmented version into state.messages — it's transient per turn.
+    // augmented by the current UIA snapshot. The augmentation is
+    // INTENTIONALLY STATELESS — we don't persist the UIA-injected
+    // system prompt into `state.messages`, because:
+    //   1. UIA elements change every turn (new screen state means a
+    //      new label vocabulary), so a stale snapshot in history would
+    //      mislead the model.
+    //   2. Re-injecting fresh on every step keeps the conversation
+    //      prefix stable, which matters for any provider-side prompt
+    //      caching the host is layering on top.
+    // The contract: every call into `step()` must pull a fresh UIA
+    // snapshot — the renderer / loop driver doesn't supply elements
+    // explicitly; we fetch them here. Don't switch to passing UIA via
+    // state without also re-thinking that turn-by-turn freshness.
     const requestMessages =
       uiaNote.length > 0
         ? [

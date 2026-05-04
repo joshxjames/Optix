@@ -27,6 +27,12 @@ function getGoogleClient(apiKey: string): GoogleGenerativeAI {
 
 /** Race the SDK promise against the user's abort signal. */
 function withAbort<T>(signal: AbortSignal, work: Promise<T>): Promise<T> {
+  // Pre-check — if the caller already aborted before invoking the SDK,
+  // the listener below would never fire (no `abort` event coming) and
+  // we'd let the network call proceed pointlessly. Reject immediately.
+  if (signal?.aborted) {
+    return Promise.reject(new Error('Already aborted before request started'));
+  }
   const abort = new Promise<never>((_, reject) => {
     signal.addEventListener('abort', () => reject(new Error('Request aborted.')), { once: true });
   });
@@ -50,6 +56,12 @@ function reportGoogleUsage(input: PromptInput, result: unknown): void {
     inputTokens: meta.promptTokenCount,
     outputTokens: meta.candidatesTokenCount,
     cacheReadInputTokens: meta.cachedContentTokenCount,
+    // Gemini's API exposes a cache-CREATE token count on responses that
+    // wrote a fresh cache entry — only some endpoints / model versions
+    // populate it, hence the `any` cast. Mirrors Anthropic's
+    // cache_creation_input_tokens semantics so the cost estimator can
+    // bill it consistently.
+    cacheCreationInputTokens: (meta as any).cacheCreationInputTokenCount,
   });
 }
 

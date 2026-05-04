@@ -11,7 +11,12 @@ const SetApiKeyArgs = z.object({
   apiKey: z.string().min(1),
 });
 
-const PartialSettingsSchema = SettingsSchema.partial();
+// `.strict()` rejects unknown fields at the IPC boundary so a buggy or
+// compromised renderer can't smuggle extra keys through to the
+// settings store (which currently merges-and-persists whatever it
+// receives). `.partial()` is applied first so every known field stays
+// optional for incremental updates.
+const PartialSettingsSchema = SettingsSchema.partial().strict();
 
 export function registerSettingsIpc(): void {
   ipcMain.handle(IPC.settings.get, async () => getSettings());

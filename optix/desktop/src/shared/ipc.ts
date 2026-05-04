@@ -55,6 +55,10 @@ export const IPC = {
     // renderer → main: open a file picker for images. Returns a list of
     // { filename, mimeType, bytes } for each selected image.
     pickImages: 'widget:pickImages',
+    // main → renderer: globalShortcut.register() returned false (binding
+    // already claimed by another app). Renderer surfaces a banner so the
+    // user can pick a different hotkey in settings. Payload: { binding }.
+    hotkeyRegistrationFailed: 'widget:hotkeyRegistrationFailed',
   },
   overlay: {
     // renderer (widget) → main: show the overlay with these regions

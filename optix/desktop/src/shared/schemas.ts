@@ -32,12 +32,19 @@ export const TierSchema = z.enum(['starter', 'pro']);
 export type Tier = z.infer<typeof TierSchema>;
 
 // A rectangular region on screen the model wants to point at.
+// `label` capped at 200 chars — labels are short UI element names
+// ("Submit button", "Tools menu"). Anything longer is the model
+// dumping unrelated text or a compromised payload trying to blow up
+// the overlay paint loop. Coordinates capped at 50_000 px — no real
+// 2026 display exceeds ~32k px wide; 50k gives headroom while still
+// rejecting garbage values that would explode the overlay's coord
+// arithmetic.
 export const TargetRegionSchema = z.object({
-  label: z.string(),
-  x: z.number().int().nonnegative(),
-  y: z.number().int().nonnegative(),
-  width: z.number().int().positive(),
-  height: z.number().int().positive(),
+  label: z.string().max(200),
+  x: z.number().int().nonnegative().lt(50_000),
+  y: z.number().int().nonnegative().lt(50_000),
+  width: z.number().int().positive().lt(50_000),
+  height: z.number().int().positive().lt(50_000),
 });
 export type TargetRegion = z.infer<typeof TargetRegionSchema>;
 

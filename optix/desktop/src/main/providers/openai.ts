@@ -125,6 +125,12 @@ async function runWithWebSearch(
     { role: 'user', content: userContent },
   ];
 
+  // Per-iteration cap counts ROUNDS of model calls; this parallel cap
+  // counts individual tool_calls emitted across the loop. A model that
+  // emits many tool_calls per round can otherwise exhaust quota without
+  // tripping MAX_SEARCH_ITERATIONS.
+  const MAX_TOOL_CALLS = 10;
+  let toolCallCount = 0;
   for (let iteration = 0; iteration < MAX_SEARCH_ITERATIONS; iteration++) {
     const resp = await client.chat.completions.create(
       {
@@ -156,6 +162,12 @@ async function runWithWebSearch(
     const finishReason = choice.finish_reason;
 
     if (finishReason === 'tool_calls' && message.tool_calls && message.tool_calls.length > 0) {
+      toolCallCount += message.tool_calls.length;
+      if (toolCallCount > MAX_TOOL_CALLS) {
+        throw new Error(
+          `OpenAI web_search loop emitted ${toolCallCount} tool_calls (cap ${MAX_TOOL_CALLS}); aborting.`,
+        );
+      }
       messages.push(message);
 
       for (const toolCall of message.tool_calls) {

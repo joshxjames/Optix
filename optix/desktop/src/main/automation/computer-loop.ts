@@ -64,6 +64,15 @@ type LoopState = {
   // turn, so `appendResults` can record each one's outcome with the
   // correct action shape.
   pendingActions: Map<string, import('@shared/schemas').AgentAction>;
+  // Flag — set true after `step()` returns toolUses, cleared in
+  // `appendResults`. The protocol invariant is that every assistant turn
+  // with tool_uses MUST be answered with matching tool_results in the
+  // very next user turn before a fresh user message can be appended.
+  // Without this guard, a renderer that mistakenly calls
+  // `appendUserTurn` while results are still pending would produce a
+  // malformed conversation (missing tool_result for tool_use ids), which
+  // every adapter rejects with a 400 from the provider.
+  awaitingResults: boolean;
   abortController: AbortController;
   startedAt: number;
   costCeilingUsd: number | null;
@@ -139,6 +148,10 @@ async function stepAndRecord(state: LoopState): Promise<ComputerLoopTurn> {
   // each result to its action. Parse-error ids are NOT cached here — the
   // adapter handles the synthetic is_error tool_result internally.
   state.pendingActions = new Map(result.toolUses.map((tu) => [tu.id, tu.action]));
+  // Track whether the next valid mutation is `appendResults` (results
+  // pending) or `appendUserTurn` (turn complete). Mismatch is a protocol
+  // violation — see the field comment on LoopState.
+  state.awaitingResults = result.toolUses.length > 0;
 
   console.log(
     `[optix-cu] turn=${state.turnIndex} provider=${state.providerId} api=${result.apiMs}ms ` +
@@ -223,6 +236,7 @@ export async function startComputerLoop(
     adapterState,
     turnIndex: 0,
     pendingActions: new Map(),
+    awaitingResults: false,
     abortController: new AbortController(),
     startedAt: Date.now(),
     costCeilingUsd,
@@ -340,6 +354,10 @@ export async function continueComputerLoop(
     { extraUserText: req.extraUserText },
   );
   state.pendingActions = new Map();
+  // Results received → we are no longer waiting; the next legal call
+  // could be appendUserTurn (after this turn completes with done) or
+  // another continue.
+  state.awaitingResults = false;
   state.turnIndex += 1;
 
   if (state.turnIndex >= MAX_TURNS) {
@@ -398,6 +416,17 @@ export async function appendUserMessageToLoop(
 ): Promise<ComputerLoopTurn> {
   const state = loops.get(req.loopId);
   if (!state) throw new Error(`Unknown loopId: ${req.loopId}`);
+
+  // Protocol invariant — see LoopState.awaitingResults. The previous
+  // assistant turn emitted tool_uses that were never paired with
+  // tool_results; appending a fresh user message here would produce a
+  // malformed conversation that the provider will reject. Surface the
+  // bug to the renderer instead of letting the API call fail opaquely.
+  if (state.awaitingResults) {
+    throw new Error(
+      'Cannot append user turn while tool_use results are pending. The renderer must call continueComputerLoop with results (or abortComputerLoop) before appending a new user message.',
+    );
+  }
 
   // Same refresh as continueComputerLoop — most relevant here, where a
   // user might come back to a paused conversation hours later.

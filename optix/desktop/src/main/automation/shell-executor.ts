@@ -18,6 +18,7 @@
 //    told.
 
 import { spawn } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import type { ShellToolAction } from '@shared/schemas';
@@ -32,16 +33,28 @@ export type ShellExecuteResult =
 
 /** Resolve the effective cwd for a shell command. Explicit cwd wins;
  *  workspace folder is the next-best default; OS home dir is the
- *  ultimate fallback. The returned path is absolute and normalised
- *  but NOT realpath-resolved — the loop driver does scope checking
- *  against the same `path.resolve` normalisation. */
+ *  ultimate fallback. The returned path is absolute, normalised, AND
+ *  realpath-resolved (when the path exists) so the IPC scope check —
+ *  which canonicalises the workspace via realpath — compares apples to
+ *  apples. Without this, a symlinked workspace + symlinked cwd could
+ *  disagree on whether they point to the same place. realpathSync is
+ *  fine here: cwd resolution happens once per shell invocation and the
+ *  paths are trivially short. */
 export function resolveShellCwd(cwd: string | undefined): string {
+  let resolved: string;
   if (cwd && cwd.trim().length > 0) {
-    return path.resolve(cwd);
+    resolved = path.resolve(cwd);
+  } else {
+    const ws = getSettings().agentWorkspaceFolder;
+    resolved = ws ? path.resolve(ws) : homedir();
   }
-  const ws = getSettings().agentWorkspaceFolder;
-  if (ws) return path.resolve(ws);
-  return homedir();
+  try {
+    return realpathSync(resolved);
+  } catch {
+    // Path doesn't exist yet (rare for cwd) — fall back to the
+    // normalised form so spawn surfaces the real ENOENT.
+    return resolved;
+  }
 }
 
 /** Execute a `run_command` action. Captures stdout + stderr,
@@ -96,11 +109,27 @@ export async function executeShellAction(
     }
 
     const timer = setTimeout(() => {
+      // Graceful kill: SIGTERM first so the child can flush + clean
+      // up, then SIGKILL after 500ms if still alive. Without the
+      // grace window we leave zombie children (e.g. orphaned node
+      // processes started by `npm test`). On Windows, child.kill()
+      // already does best-effort tree kill via taskkill so the
+      // signal name doesn't matter much there; on Unix the
+      // distinction is real.
       try {
-        child.kill('SIGKILL');
+        child.kill('SIGTERM');
       } catch {
         /* ignore */
       }
+      setTimeout(() => {
+        if (!child.killed) {
+          try {
+            child.kill('SIGKILL');
+          } catch {
+            /* ignore */
+          }
+        }
+      }, 500);
       finish({
         ok: false,
         error: `Command timed out after ${timeoutMs}ms.`,
@@ -141,25 +170,31 @@ export async function executeShellAction(
 }
 
 /** Glue chunks into one string. If the total exceeds the cap, keep
- *  the tail (build / test logs are most informative at the end) and
- *  prepend a header noting how many bytes were dropped. */
+ *  BOTH head and tail with a marker between them. The tail-only
+ *  scheme lost early errors (e.g. "module not found" preamble that
+ *  cascaded into thousands of lines of follow-on tracebacks); a
+ *  head + tail split keeps both the originating diagnostic and the
+ *  final state visible to the agent. */
 function assembleOutput(
   chunks: string[],
   totalBytes: number,
   _droppedBytesIgnored: number,
 ): string {
-  let joined = chunks.join('');
+  const joined = chunks.join('');
   if (totalBytes <= OUTPUT_BYTE_CAP) {
     return joined.trim();
   }
-  // Walk back from the end taking enough characters to fit the cap.
-  // Buffer.byteLength is slower per-iter than `length`, but per-call
-  // it's fine — runs once on completion.
-  while (Buffer.byteLength(joined, 'utf8') > OUTPUT_BYTE_CAP) {
-    joined = joined.slice(joined.length - Math.ceil(OUTPUT_BYTE_CAP / 2));
-  }
-  const dropped = totalBytes - Buffer.byteLength(joined, 'utf8');
-  return `[truncated ${dropped} bytes from the start]\n${joined.trim()}`;
+  // Half the cap to head, half to tail, leaving a tiny margin for the
+  // separator marker. 8KB + 8KB fits under the 16KB cap.
+  const sliceBytes = Math.floor(OUTPUT_BYTE_CAP / 2) - 64;
+  const headBuf = Buffer.from(joined, 'utf8').subarray(0, sliceBytes);
+  const tailBuf = Buffer.from(joined, 'utf8').subarray(
+    Math.max(0, Buffer.byteLength(joined, 'utf8') - sliceBytes),
+  );
+  const head = headBuf.toString('utf8');
+  const tail = tailBuf.toString('utf8');
+  const dropped = totalBytes - headBuf.length - tailBuf.length;
+  return `${head}\n... [truncated ${dropped} bytes] ...\n${tail}`.trim();
 }
 
 /** Human-readable description of a shell action for UI display. The

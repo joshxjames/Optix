@@ -22,6 +22,30 @@ const MAX_LEV_DISTANCE = 3;
 const MIN_FUZZY_RATIO = 0.65;
 const MIN_TOKEN_JACCARD = 0.5;
 
+// Near-tie guard: when the top two candidates are within this score
+// gap, we require a stronger absolute match before accepting. Prevents
+// silently picking the wrong one of two near-identical labels (e.g.
+// two "Submit" buttons on a page).
+const TIEBREAK_GAP = 0.05;
+const TIEBREAK_MIN_RATIO = 0.85;
+
+// UIA control types the agent can usefully click / interact with.
+// Disabled and static-text matches are useless to click and just
+// confuse the agent (and can trigger false-positive "matches" on
+// labels that happen to appear as instructional text on the page).
+const INTERACTIVE_CONTROL_TYPES = new Set<string>([
+  'ControlType.Button',
+  'ControlType.Hyperlink',
+  'ControlType.MenuItem',
+  'ControlType.ListItem',
+  'ControlType.CheckBox',
+  'ControlType.RadioButton',
+  'ControlType.Edit',
+  'ControlType.ComboBox',
+  'ControlType.TabItem',
+  'ControlType.Tab',
+]);
+
 export type LabelResolution =
   | {
       ok: true;
@@ -63,6 +87,10 @@ export async function resolveLabelToScreenPoint(label: string): Promise<LabelRes
   const considered: Best[] = [];
 
   for (const el of elements) {
+    // Filter to interactive control types only. Static text / disabled
+    // matches just confuse the agent — they look like the right thing
+    // by name but you can't click them.
+    if (!INTERACTIVE_CONTROL_TYPES.has(el.controlType)) continue;
     const m = scoreLabelMatch(normLabel, el);
     const passes =
       m.lev <= MAX_LEV_DISTANCE ||
@@ -86,6 +114,24 @@ export async function resolveLabelToScreenPoint(label: string): Promise<LabelRes
     considered.push(entry);
     considered.sort((a, b) => a.score - b.score);
     if (considered.length > 3) considered.length = 3;
+  }
+
+  // Near-tie guard: when two candidates score nearly identically on
+  // the fuzzy ratio, the top-1 might be wrong half the time. Require
+  // the winner to clear a higher bar before we silently pick it; if
+  // it doesn't, return ambiguous so the agent can ask for a more
+  // specific label.
+  if (best && considered.length >= 2) {
+    const top = considered[0];
+    const second = considered[1];
+    if (top && second && Math.abs(top.ratio - second.ratio) < TIEBREAK_GAP) {
+      if (top.ratio < TIEBREAK_MIN_RATIO) {
+        return {
+          ok: false,
+          reason: `Ambiguous label "${label}" — top two candidates "${top.bestText}" and "${second.bestText}" tied (ratio ${top.ratio.toFixed(2)}/${second.ratio.toFixed(2)}). Use a more specific label.`,
+        };
+      }
+    }
   }
 
   if (best === null) {

@@ -153,7 +153,7 @@ export function ComputerLoopProgress({
   useEffect(() => {
     if (!lastItemRef.current) return;
     lastItemRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [items.length, pendingActionId, pendingAsk?.toolUseId, done]);
+  }, [items.length, pendingActionId, pendingAsk?.toolUseId, pendingPlan?.toolUseId, done]);
 
   return (
     <article className={`response loop ${done ? 'loop--done' : 'loop--running'}`}>

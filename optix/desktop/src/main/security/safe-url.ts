@@ -18,6 +18,21 @@ export function isSafeExternalUrl(url: string): boolean {
   }
 }
 
+/** Defense-in-depth check for the URLs returned by our Stripe Cloud
+ *  Functions before we hand them to `shell.openExternal`. The Cloud
+ *  Function only ever returns Stripe-hosted URLs, but a misbehaving
+ *  relay (or a future bug there) shouldn't be able to redirect the
+ *  user's browser to an arbitrary domain. We require https + a
+ *  *.stripe.com hostname. */
+export function isAllowedStripeUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && /(^|\.)stripe\.com$/.test(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
 /** Open an external URL via the OS handler, only if it's HTTP(S).
  *  Returns true on success, false if the URL was blocked or
  *  `shell.openExternal` rejected. Logs blocked attempts so a

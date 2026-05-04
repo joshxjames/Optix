@@ -402,7 +402,13 @@ export async function listAuditLogs(): Promise<AuditLogSummary[]> {
  *  true on success, false if the file didn't exist or couldn't be
  *  removed (the latter logs a warning). */
 export async function deleteAuditLog(filename: string): Promise<boolean> {
-  if (!/^[a-zA-Z0-9_\-:.]+\.json$/.test(filename)) return false;
+  // No colon in the allowed set — on Windows / NTFS it's part of the
+  // alternate-data-stream syntax (`file.json:hidden`) and drive-letter
+  // syntax (`C:foo`), which can interact unexpectedly with `path.join`
+  // and the OS file APIs. Our `fileNameFor` already normalises ISO
+  // timestamp colons to `-`, so colons should never appear in a
+  // legitimately-written audit filename.
+  if (!/^[a-zA-Z0-9_\-]+\.json$/.test(filename)) return false;
   const dir = getAuditDir();
   try {
     await rm(path.join(dir, filename), { force: true });
@@ -419,7 +425,9 @@ export async function deleteAuditLog(filename: string): Promise<boolean> {
 /** Read a single audit log by filename. Validates the filename to prevent
  *  directory traversal (the renderer is untrusted from main's perspective). */
 export async function readAuditLog(filename: string): Promise<AuditLog | null> {
-  if (!/^[a-zA-Z0-9_\-:.]+\.json$/.test(filename)) return null;
+  // No colon — see `deleteAuditLog` for the Windows ADS / drive-letter
+  // rationale. `fileNameFor` already strips colons from the timestamp.
+  if (!/^[a-zA-Z0-9_\-]+\.json$/.test(filename)) return null;
   const dir = getAuditDir();
   try {
     const raw = await readFile(path.join(dir, filename), 'utf8');

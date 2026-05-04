@@ -17,6 +17,18 @@ export function createWidgetWindow(): BrowserWindow {
   const x = primary.workArea.x + primary.workArea.width - WIDGET_WIDTH - EDGE_GAP;
   const y = primary.workArea.y + primary.workArea.height - WIDGET_HEIGHT - EDGE_GAP;
 
+  // Cross-platform note on `alwaysOnTop: true` + `setAlwaysOnTop(.., 'floating')`:
+  //   - Windows: DWM honours always-on-top under most full-screen apps,
+  //     including borderless-fullscreen games and presentations. Exclusive
+  //     full-screen DirectX/Vulkan apps that take ownership of the display
+  //     can still occlude us — there's no Win32 escape hatch from that.
+  //   - macOS: 'floating' window level sits below the menubar but above
+  //     normal windows. Modern macOS (Mission Control, Spaces, full-screen
+  //     Spaces) may occlude floating windows when the user enters a per-app
+  //     full-screen Space — behaviour varies by OS version. `visibleOnFullScreen`
+  //     mitigates this when Spaces is in play but is not a guarantee.
+  //   - Linux: WM-dependent; most tiling WMs ignore always-on-top hints
+  //     unless explicitly configured.
   widgetWindow = new BrowserWindow({
     width: WIDGET_WIDTH,
     height: WIDGET_HEIGHT,
@@ -44,7 +56,11 @@ export function createWidgetWindow(): BrowserWindow {
   // WDA_EXCLUDEFROMCAPTURE) and NSWindowSharingNone on macOS. Otherwise the
   // model ends up analysing a screenshot that contains our own UI overlaying
   // whatever the user was asking about.
-  widgetWindow.setContentProtection(true);
+  // Windows-only API; no-op on macOS/Linux but worth the explicit guard so
+  // future Electron versions can't surprise us with new behaviour.
+  if (process.platform === 'win32') {
+    widgetWindow.setContentProtection(true);
+  }
 
   // Hard-deny any external navigation or new windows from the renderer.
   // Pass the URL through `safeOpenExternal` so only http(s) URLs are
@@ -76,8 +92,13 @@ export function createWidgetWindow(): BrowserWindow {
     // Re-assert content protection after show. Electron has a known bug
     // where WDA_EXCLUDEFROMCAPTURE set before show doesn't stick on
     // transparent windows — re-setting after the HWND is visible forces
-    // DWM to honour it.
-    widgetWindow?.setContentProtection(true);
+    // DWM to honour it. Some Windows DWM transitions can drop the
+    // affinity flag across show/hide, so re-applying is essential.
+    // Windows-only API; no-op on macOS/Linux but worth the explicit guard
+    // so future Electron versions can't surprise us with new behaviour.
+    if (process.platform === 'win32') {
+      widgetWindow?.setContentProtection(true);
+    }
   });
   widgetWindow.on('closed', () => {
     widgetWindow = null;
@@ -229,8 +250,18 @@ export async function endWidgetTextInput(): Promise<void> {
   widgetWindow.setFocusable(false);
   widgetWindow.blur();
   if (savedForegroundHwnd) {
-    const { setForegroundWindow } = await import('@main/automation/foreground');
-    await setForegroundWindow(savedForegroundHwnd);
+    const { captureForegroundHwnd, setForegroundWindow } = await import(
+      '@main/automation/foreground'
+    );
+    // Race guard: between beginWidgetTextInput and endWidgetTextInput the
+    // user may have manually switched apps (Alt+Tab, clicked a different
+    // window). If the current foreground is no longer the HWND we saved,
+    // silently skip the restore — yanking them back to a stale window
+    // would be more disruptive than just leaving focus where they put it.
+    const currentFg = await captureForegroundHwnd();
+    if (currentFg && currentFg === savedForegroundHwnd) {
+      await setForegroundWindow(savedForegroundHwnd);
+    }
     savedForegroundHwnd = null;
   }
 }
@@ -250,5 +281,10 @@ export function toggleWidget(): void {
   // flag across show/hide cycles on transparent windows.
   win.show();
   win.setAlwaysOnTop(true, 'floating');
-  win.setContentProtection(true);
+  // Windows-only API; no-op on macOS/Linux but worth the explicit guard so
+  // future Electron versions can't surprise us with new behaviour. Re-apply
+  // after show — some Windows DWM transitions drop the affinity flag.
+  if (process.platform === 'win32') {
+    win.setContentProtection(true);
+  }
 }

@@ -366,13 +366,24 @@ export type ComputerExecuteResult =
   | { ok: true; text?: string; noScreenshot?: boolean }
   | { ok: false; error: string };
 
-/** Map xdotool-style modifier names to robotjs modifier names. */
+/** Map xdotool-style modifier names to robotjs modifier names.
+ *  Platform-aware on `cmd`: robotjs rejects `'command'` on Windows
+ *  (no equivalent modifier — there's no Cmd key), so we fold it onto
+ *  `'control'` since most agents conflate cmd/ctrl when generating
+ *  cross-platform shortcuts (e.g. "cmd+c" really means "the
+ *  copy-paste modifier"). On macOS we keep `'command'` honest.
+ *  Best-effort heuristic: a Windows-key-only shortcut still works via
+ *  `super` / `win` aliases — those keep mapping to `'command'` and
+ *  robotjs handles them as the Win key on Windows. */
 function mapModifier(m: string): string | null {
   const lower = m.trim().toLowerCase();
   if (lower === 'ctrl' || lower === 'control') return 'control';
   if (lower === 'shift') return 'shift';
   if (lower === 'alt') return 'alt';
-  if (lower === 'cmd' || lower === 'command' || lower === 'super' || lower === 'win') return 'command';
+  if (lower === 'cmd' || lower === 'command') {
+    return process.platform === 'win32' ? 'control' : 'command';
+  }
+  if (lower === 'super' || lower === 'win') return 'command';
   return null;
 }
 
@@ -546,6 +557,12 @@ export async function executeComputerAction(
           robot.moveMouse(ix, iy);
           await new Promise((r) => setTimeout(r, 3));
         }
+        // Settle delay between final move and release: gives Windows
+        // DWM a beat to register the cursor at the end position before
+        // the mouse-up. Without it, fast drags occasionally drop just
+        // short of the target. 30ms is below human perception but
+        // above DWM's compositor frame.
+        await new Promise((r) => setTimeout(r, 30));
         robot.mouseToggle('up', 'left');
         console.log(`[optix-cu] drag (${start.x},${start.y}) → (${end.x},${end.y})`);
         return { ok: true };

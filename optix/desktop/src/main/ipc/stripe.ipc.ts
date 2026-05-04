@@ -23,6 +23,7 @@ import {
   stopLoopbackServer,
   type LoopbackPathConfig,
 } from '@main/auth/loopback-server';
+import { isAllowedStripeUrl } from '@main/security/safe-url';
 
 // Tracks whether the currently-active loopback (if any) was started by
 // stripe.startCheckout — so cancelCheckout doesn't accidentally tear
@@ -199,6 +200,19 @@ export function registerStripeIpc(): void {
       throw err;
     }
 
+    // Defense-in-depth: the Cloud Function only ever returns Stripe URLs,
+    // but validate the hostname + scheme before opening. A compromised
+    // relay shouldn't be able to redirect the user's browser anywhere
+    // off-Stripe. Tear the loopback down on rejection so the flow
+    // doesn't leak a server into the next attempt.
+    if (!isAllowedStripeUrl(checkoutUrl)) {
+      stopLoopbackServer();
+      stripeOwnsLoopback = false;
+      throw new Error(
+        'Refusing to open checkout URL: not a Stripe-hosted https endpoint.',
+      );
+    }
+
     // Hand off to the user's default browser. Stripe's hosted Checkout
     // page handles cards, Apple/Google Pay, 3DS — all the parts a
     // desktop app shouldn't reimplement. The user comes back via the
@@ -291,6 +305,14 @@ export function registerStripeIpc(): void {
     const json = (await res.json()) as { portalUrl?: string };
     if (!json.portalUrl) {
       throw new Error('Billing portal session returned no URL.');
+    }
+    // Defense-in-depth: same hostname/scheme check as startCheckout. The
+    // Cloud Function only returns Stripe URLs in normal operation; this
+    // guards against a relay bug or compromise redirecting elsewhere.
+    if (!isAllowedStripeUrl(json.portalUrl)) {
+      throw new Error(
+        'Refusing to open billing portal URL: not a Stripe-hosted https endpoint.',
+      );
     }
     void shell.openExternal(json.portalUrl);
     return { portalUrl: json.portalUrl };

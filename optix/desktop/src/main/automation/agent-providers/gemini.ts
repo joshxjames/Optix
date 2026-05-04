@@ -640,7 +640,18 @@ export const geminiAgentAdapter: AgentProviderAdapter<GeminiState> = {
     const byId = new Map(results.map((r) => [r.toolUseId, r]));
     const responseParts: Part[] = [];
     for (const id of state.pendingIds) {
-      const name = state.pendingNames.get(id) ?? 'unknown';
+      // Gemini's protocol requires `functionResponse.name` to echo the
+      // ORIGINAL functionCall name. A missing entry here means our
+      // pending-state bookkeeping diverged from what we emitted last
+      // turn; the conversation is unrecoverable. Fail loudly rather
+      // than send `'unknown'` and watch the model react to a phantom
+      // tool name.
+      const name = state.pendingNames.get(id);
+      if (!name) {
+        throw new Error(
+          `Gemini adapter: missing function name for pending call ${id} — adapter state is corrupt.`,
+        );
+      }
       const parseErr = state.pendingErrors.get(id);
       const r = byId.get(id);
 

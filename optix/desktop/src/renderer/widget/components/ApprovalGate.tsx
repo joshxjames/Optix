@@ -11,7 +11,7 @@ export function ApprovalGate({ prompt, onApprove, onCancel }: Props) {
         <span className="response__intent">⚠ Permission required</span>
       </header>
       <div className="response__scroll">
-        <p className="approval__quote">"{prompt}"</p>
+        <p className="approval__quote">{`"${prompt}"`}</p>
         <p className="approval__hint">
           You can cancel the agent at any time with the Cancel button.
         </p>

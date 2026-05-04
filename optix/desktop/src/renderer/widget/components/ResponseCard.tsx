@@ -62,6 +62,10 @@ export function ResponseCard({ response, sources, imageWidth, imageHeight }: Pro
   async function runAction(index: number): Promise<void> {
     const action = response.proposedActions[index];
     if (!action) return;
+    // Guard against double-click / double-invocation: if this row is
+    // already running, ignore the second call rather than firing the
+    // IPC twice and clobbering the state machine.
+    if (actionStates[index]?.kind === 'running') return;
     setActionStates((prev) =>
       prev.map((s, i) => (i === index ? { kind: 'running' } : s)),
     );

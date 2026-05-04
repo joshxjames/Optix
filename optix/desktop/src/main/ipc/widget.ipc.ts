@@ -1,5 +1,6 @@
 import { dialog, ipcMain } from 'electron';
-import { readFile } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
 import { IPC } from '@shared/ipc';
@@ -116,8 +117,32 @@ export function registerWidgetIpc(): void {
           defaultPath: current,
         });
     if (result.canceled || result.filePaths.length === 0) return null;
+    // Realpath the picked folder so a symlink can't quietly route the
+    // workspace scope to somewhere outside the user's intent. This is
+    // a soft check: we don't reject (the user may have a legitimately
+    // symlinked workspace, e.g. ~/code → /mnt/data/code) — just warn
+    // to the main-process log when the resolved path leaves the home
+    // dir or lands in a system location.
+    const picked = result.filePaths[0];
+    if (!picked) return null;
+    let canonical = picked;
+    try {
+      canonical = await realpath(picked);
+    } catch {
+      // Unresolvable — return as-is and let downstream handle.
+    }
+    const home = homedir();
+    const lower = canonical.toLowerCase();
+    const outsideHome = !canonical.startsWith(home);
+    const systemRoots = ['c:\\windows', 'c:\\program files', '/etc', '/usr', '/var', '/system'];
+    const inSystem = systemRoots.some((r) => lower.startsWith(r));
+    if (outsideHome || inSystem) {
+      console.warn(
+        `[optix-widget] workspace folder "${picked}" resolves to "${canonical}" — outside home dir or system path`,
+      );
+    }
     // Return the chosen path; the renderer persists + broadcasts via
     // `settings.set` so the change-listener fires and the UI updates.
-    return result.filePaths[0];
+    return canonical;
   });
 }

@@ -25,6 +25,15 @@ const StartRequestSchema = z.object({
   modelId: z.string(),
 });
 
+// Per-attachment 10 MB cap and 20-item array cap on attachments — defense
+// against a compromised renderer pushing huge blobs through to disk
+// (each turn is persisted under the conversation dir). Same 10 MB cap
+// applies to the captured screenshot. 10 MB comfortably covers a 4K PNG
+// screenshot or a moderate-resolution camera photo; anything larger is
+// almost certainly junk we shouldn't be writing out.
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const MAX_ATTACHMENTS = 20;
+
 const AppendTurnRequestSchema = z.object({
   convId: z.string(),
   mode: ModeSchema,
@@ -32,15 +41,22 @@ const AppendTurnRequestSchema = z.object({
   attachments: z
     .array(
       z.object({
-        bytes: Uint8ArraySchema,
+        bytes: Uint8ArraySchema.refine(
+          (b) => b.byteLength <= MAX_ATTACHMENT_BYTES,
+          { message: `attachment exceeds ${MAX_ATTACHMENT_BYTES} bytes` },
+        ),
         mimeType: z.string(),
         filename: z.string().optional(),
       }),
     )
+    .max(MAX_ATTACHMENTS)
     .default([]),
   capture: z
     .object({
-      bytes: Uint8ArraySchema,
+      bytes: Uint8ArraySchema.refine(
+        (b) => b.byteLength <= MAX_ATTACHMENT_BYTES,
+        { message: `capture exceeds ${MAX_ATTACHMENT_BYTES} bytes` },
+      ),
       mimeType: z.string(),
       width: z.number().int().positive(),
       height: z.number().int().positive(),
@@ -56,6 +72,13 @@ const AppendTurnRequestSchema = z.object({
 });
 
 const IdRequestSchema = z.object({ id: z.string() });
+
+// Explicit empty schema for handlers that take no args. Parsing the
+// raw payload through `z.object({}).strict()` rejects any extra fields
+// the renderer might pass — without this, future additions of args
+// to the renderer side could silently bypass validation if the main
+// handler isn't updated in lockstep.
+const EmptyRequestSchema = z.object({}).strict();
 
 const ReadAttachmentRequestSchema = z.object({
   convId: z.string(),
@@ -73,7 +96,8 @@ export function registerChatHistoryIpc(): void {
     return await appendTurn(req);
   });
 
-  ipcMain.handle(IPC.chatHistory.list, async () => {
+  ipcMain.handle(IPC.chatHistory.list, async (_event, raw: unknown) => {
+    EmptyRequestSchema.parse(raw ?? {});
     return await listConversations();
   });
 

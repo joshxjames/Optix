@@ -61,11 +61,21 @@ export async function runOcr(imageBytes: Uint8Array): Promise<OcrBox[]> {
     bbox?: { x0: number; y0: number; x1: number; y1: number };
   };
   const words: TWord[] = (data as unknown as { words?: TWord[] }).words ?? [];
+  // Confidence threshold of 30 (relaxed from 60) — tesseract's confidence is
+  // noisy on small UI text, light-on-dark themes, and antialiased fonts.
+  // Dropping at 60 silently swallowed a lot of legitimately legible words,
+  // which made label-snap miss obvious matches. Tracking the dropped count
+  // lets the user see why low-confidence regions aren't snapping.
+  const CONFIDENCE_THRESHOLD = 30;
+  let droppedLowConfidence = 0;
   for (const w of words) {
     if (!w || typeof w.text !== 'string') continue;
     const text = w.text.trim();
     if (text.length === 0) continue;
-    if (typeof w.confidence === 'number' && w.confidence < 60) continue;
+    if (typeof w.confidence === 'number' && w.confidence < CONFIDENCE_THRESHOLD) {
+      droppedLowConfidence += 1;
+      continue;
+    }
     const b = w.bbox;
     if (!b) continue;
     const x = Math.max(0, Math.round(b.x0));
@@ -73,6 +83,11 @@ export async function runOcr(imageBytes: Uint8Array): Promise<OcrBox[]> {
     const width = Math.max(1, Math.round(b.x1 - b.x0));
     const height = Math.max(1, Math.round(b.y1 - b.y0));
     out.push({ text, bbox: { x, y, width, height } });
+  }
+  if (droppedLowConfidence > 0) {
+    console.warn(
+      `[optix-ocr] dropped ${droppedLowConfidence} word(s) below confidence ${CONFIDENCE_THRESHOLD} (kept ${out.length})`,
+    );
   }
   return out;
 }
