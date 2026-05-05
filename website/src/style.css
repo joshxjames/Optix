@@ -743,28 +743,32 @@ section { padding: var(--section-pad) 0; position: relative; }
   border: 1px solid rgba(34, 227, 255, 0.15);
   border-radius: 6px;
   height: 42px;
-  /* Reveal happens via keyframes synced to the 3s scan cycle. Each
-     card has its own keyframes so opacity flips at the moment the
-     scan-line reaches its vertical position — no JS needed. */
+  /* Cards start invisible regardless of which scene they're in;
+     scene-scoped animation declarations below choose the keyframes
+     and duration for that scene's narrative. Position relative so
+     the green tick (Access scene) can absolute-position inside. */
   opacity: 0;
   transform: translateY(6px);
-  /* Matches the scan-line duration so the reveal keyframes (below)
-     stay sync'd to the bar's vertical position. */
+  position: relative;
+  box-sizing: border-box;
+}
+
+/* Ask scene timing — synced to the 7s scan-line sweep. */
+.how__scene--sees .how__feature-card {
   animation-duration: 7s;
   animation-timing-function: ease-in-out;
   animation-iteration-count: infinite;
-  box-sizing: border-box;
 }
-.how__feature-card:nth-child(1) { animation-name: feature-card-1; }
-.how__feature-card:nth-child(2) { animation-name: feature-card-2; }
-.how__feature-card:nth-child(3) { animation-name: feature-card-3; }
+.how__scene--sees .how__feature-card:nth-child(1) { animation-name: feature-card-1; }
+.how__scene--sees .how__feature-card:nth-child(2) { animation-name: feature-card-2; }
+.how__scene--sees .how__feature-card:nth-child(3) { animation-name: feature-card-3; }
 
 /* Each card: invisible until the scan-line crosses its row, then
-   visible until the cycle resets. Percentages match the scan
-   keyframes — scan-line opacity is 0→1 by 20%, fully through the
-   scene by 100%, so card 1 reveals around 25%, card 2 around 45%,
-   card 3 around 65%. Cards then hold visible until ~95% before fading
-   out cleanly so the next loop starts from a clean slate. */
+   visible until the cycle resets. Percentages tuned so the three
+   reveals cluster tightly (41% / 48% / 55%) around card 2 — the
+   keeper from earlier rounds of timing tweaks. Cards hold visible
+   until ~92% then fade out so the next loop starts from a clean
+   slate. */
 @keyframes feature-card-1 {
   0%, 35%   { opacity: 0; transform: translateY(6px); }
   41%, 92%  { opacity: 1; transform: translateY(0); }
@@ -779,6 +783,88 @@ section { padding: var(--section-pad) 0; position: relative; }
   0%, 49%   { opacity: 0; transform: translateY(6px); }
   55%, 92%  { opacity: 1; transform: translateY(0); }
   100%      { opacity: 0; transform: translateY(6px); }
+}
+
+/* Access scene timing — slower (10s) to leave room for each card to
+   pick up its green tick before the next card reveals. The Access
+   narrative is "agent completes a task, ticks it off, moves on" so
+   the cadence reads as deliberate rather than rapid-fire. */
+.how__scene--does .how__feature-card {
+  animation-duration: 10s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+.how__scene--does .how__feature-card:nth-child(1) { animation-name: access-card-1; }
+.how__scene--does .how__feature-card:nth-child(2) { animation-name: access-card-2; }
+.how__scene--does .how__feature-card:nth-child(3) { animation-name: access-card-3; }
+
+/* Card reveal beats sit at 13% / 37% / 61%, with each tick firing
+   ~1.4s after its card (at 27% / 51% / 75%) and BEFORE the next
+   card reveals — that order is the user-visible narrative. */
+@keyframes access-card-1 {
+  0%, 7%    { opacity: 0; transform: translateY(6px); }
+  13%, 95%  { opacity: 1; transform: translateY(0); }
+  100%      { opacity: 0; transform: translateY(6px); }
+}
+@keyframes access-card-2 {
+  0%, 31%   { opacity: 0; transform: translateY(6px); }
+  37%, 95%  { opacity: 1; transform: translateY(0); }
+  100%      { opacity: 0; transform: translateY(6px); }
+}
+@keyframes access-card-3 {
+  0%, 55%   { opacity: 0; transform: translateY(6px); }
+  61%, 95%  { opacity: 1; transform: translateY(0); }
+  100%      { opacity: 0; transform: translateY(6px); }
+}
+
+/* ----- Green tick (Access scene only) ---------------------------------- */
+
+.how__feature-card-tick {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #3dd178;
+  /* Scale + opacity-driven pop. translateY(-50%) is the centring
+     anchor — keyframes preserve it via composed transforms. */
+  opacity: 0;
+  transform: translateY(-50%) scale(0.6);
+  filter: drop-shadow(0 0 6px rgba(61, 209, 120, 0.55));
+  animation-duration: 10s;
+  animation-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1); /* slight bounce */
+  animation-iteration-count: infinite;
+}
+.how__feature-card-tick svg {
+  width: 100%;
+  height: 100%;
+}
+.how__scene--does .how__feature-card:nth-child(1) .how__feature-card-tick {
+  animation-name: access-tick-1;
+}
+.how__scene--does .how__feature-card:nth-child(2) .how__feature-card-tick {
+  animation-name: access-tick-2;
+}
+.how__scene--does .how__feature-card:nth-child(3) .how__feature-card-tick {
+  animation-name: access-tick-3;
+}
+@keyframes access-tick-1 {
+  0%, 21%   { opacity: 0; transform: translateY(-50%) scale(0.6); }
+  27%, 95%  { opacity: 1; transform: translateY(-50%) scale(1); }
+  100%      { opacity: 0; transform: translateY(-50%) scale(0.6); }
+}
+@keyframes access-tick-2 {
+  0%, 45%   { opacity: 0; transform: translateY(-50%) scale(0.6); }
+  51%, 95%  { opacity: 1; transform: translateY(-50%) scale(1); }
+  100%      { opacity: 0; transform: translateY(-50%) scale(0.6); }
+}
+@keyframes access-tick-3 {
+  0%, 69%   { opacity: 0; transform: translateY(-50%) scale(0.6); }
+  75%, 95%  { opacity: 1; transform: translateY(-50%) scale(1); }
+  100%      { opacity: 0; transform: translateY(-50%) scale(0.6); }
 }
 
 .how__feature-card-icon {
@@ -862,46 +948,10 @@ section { padding: var(--section-pad) 0; position: relative; }
   border-left: none; border-top: none;
 }
 
-/* Scene 2 — Access: a cursor wandering with click rings. */
-.how__cursor {
-  position: absolute;
-  width: 28px;
-  height: 28px;
-  color: var(--fg);
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
-  animation: cursor-path 6s ease-in-out infinite;
-}
-.how__cursor svg {
-  width: 100%;
-  height: 100%;
-  stroke: var(--bg);
-  stroke-width: 1.5;
-  paint-order: stroke fill;
-}
-@keyframes cursor-path {
-  0%   { left: 18%; top: 28%; }
-  25%  { left: 62%; top: 22%; }
-  50%  { left: 70%; top: 60%; }
-  75%  { left: 25%; top: 64%; }
-  100% { left: 18%; top: 28%; }
-}
-.how__click-ring {
-  position: absolute;
-  top: 14px; left: 4px;
-  width: 28px;
-  height: 28px;
-  border: 2px solid var(--accent);
-  border-radius: 50%;
-  opacity: 0;
-  animation: click-ring 6s ease-in-out infinite;
-}
-.how__click-ring--delayed { animation-delay: 3s; }
-@keyframes click-ring {
-  0%, 19%   { opacity: 0; transform: scale(0.4); }
-  20%       { opacity: 0.9; transform: scale(0.4); }
-  35%       { opacity: 0; transform: scale(2.2); }
-  100%      { opacity: 0; transform: scale(2.2); }
-}
+/* Scene 2 — Access: see the .how__scene--does animations under
+   "Access scene timing" above; this scene reuses the feature-cards
+   markup from Scene 1, with each card picking up a green tick
+   before the next card reveals. */
 
 /* Scene 3 — Automate: REC dot (top-right corner) + a stack of "recorded
    step" rows. Top-right places it near the widget mock without

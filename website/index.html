@@ -251,14 +251,49 @@
                   <div class="how__scan-line"></div>
                 </div>
 
-                <!-- Scene 2 — Access: a cursor with click rings. -->
+                <!-- Scene 2 — Access: same 3-card structure as Ask, but
+                     each card picks up a green tick before the next card
+                     reveals. Mirrors the agentic flow — Optix completes
+                     each step, marks it done, moves on to the next.
+                     Slower 10s cycle gives each tick time to register. -->
                 <div class="how__scene how__scene--does" aria-hidden="true">
-                  <div class="how__cursor">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M2 2 L2 16 L6 12 L9 19 L11 18 L8 11 L14 11 Z"/>
-                    </svg>
-                    <span class="how__click-ring"></span>
-                    <span class="how__click-ring how__click-ring--delayed"></span>
+                  <div class="how__feature-cards">
+                    <div class="how__feature-card">
+                      <div class="how__feature-card-icon"></div>
+                      <div class="how__feature-card-lines">
+                        <div class="how__feature-card-line"></div>
+                        <div class="how__feature-card-line how__feature-card-line--short"></div>
+                      </div>
+                      <div class="how__feature-card-tick">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="5 12 10 17 19 8"/>
+                        </svg>
+                      </div>
+                    </div>
+                    <div class="how__feature-card">
+                      <div class="how__feature-card-icon"></div>
+                      <div class="how__feature-card-lines">
+                        <div class="how__feature-card-line"></div>
+                        <div class="how__feature-card-line how__feature-card-line--short"></div>
+                      </div>
+                      <div class="how__feature-card-tick">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="5 12 10 17 19 8"/>
+                        </svg>
+                      </div>
+                    </div>
+                    <div class="how__feature-card">
+                      <div class="how__feature-card-icon"></div>
+                      <div class="how__feature-card-lines">
+                        <div class="how__feature-card-line"></div>
+                        <div class="how__feature-card-line how__feature-card-line--short"></div>
+                      </div>
+                      <div class="how__feature-card-tick">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="5 12 10 17 19 8"/>
+                        </svg>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
