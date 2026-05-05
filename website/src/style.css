@@ -788,10 +788,14 @@ section { padding: var(--section-pad) 0; position: relative; }
   50%      { opacity: 0.6; box-shadow: 0 0 0 6px rgba(244, 120, 120, 0); }
 }
 .how__steps-stack {
+  /* Top-anchored rather than vertically centered: with 5 rows the stack
+     is tall enough that centering would push the top row up under the
+     frame-bar / REC badge. Anchoring at ~20% from the scene top keeps
+     row 1 well clear of those, and the bottom row stays clear of the
+     widget mock at the bottom-right. */
   position: absolute;
-  top: 50%;
+  top: 20%;
   left: 16px;
-  transform: translateY(-50%);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -804,9 +808,13 @@ section { padding: var(--section-pad) 0; position: relative; }
   opacity: 0;
   animation: step-appear 4s ease-in-out infinite;
 }
+/* Stagger each row by 0.4s — at 5 rows that's a 1.6s ramp-in spread
+   followed by ~2.4s of all-visible time before the cycle restarts. */
 .how__step-row:nth-child(1) { animation-delay: 0s; }
-.how__step-row:nth-child(2) { animation-delay: 0.5s; }
-.how__step-row:nth-child(3) { animation-delay: 1s; }
+.how__step-row:nth-child(2) { animation-delay: 0.4s; }
+.how__step-row:nth-child(3) { animation-delay: 0.8s; }
+.how__step-row:nth-child(4) { animation-delay: 1.2s; }
+.how__step-row:nth-child(5) { animation-delay: 1.6s; }
 @keyframes step-appear {
   0%, 70%   { opacity: 0; transform: translateX(-8px); }
   20%       { opacity: 1; transform: translateX(0); }
