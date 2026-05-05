@@ -44,15 +44,15 @@ export const MODELS_BY_PROVIDER: Record<ProviderId, ModelEntry[]> = {
     { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash', note: 'Cheaper / faster.' },
     { id: 'gemini-2.0-flash-exp', label: 'Gemini 2.0 Flash (experimental)' },
   ],
-  // Optix Cloud forwards to Anthropic via the relay, so the same Claude
-  // model menu applies. Cost shows up on the user's subscription bill,
-  // not directly per-token.
+  // Optix Cloud is locked to Claude Opus 4.7 — it's the only model we
+  // sell on the subscription path. Sonnet/Haiku/other providers are
+  // only available via BYO key. (The relay itself doesn't enforce this
+  // server-side; the policy is the UI catalog here. If we ever want a
+  // hard server-side gate, add a model whitelist in the relay.)
   optixCloud: [
-    // TODO(snapshot): match the Anthropic entries above once snapshots
-    // are pinned — relay accepts the same model IDs.
-    { id: 'claude-opus-4-7', label: 'Claude Opus 4.7', note: 'Recommended — best GUI grounding.' },
-    { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-    { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', note: 'Fastest / cheapest.' },
+    // TODO(snapshot): pin `claude-opus-4-7-YYYYMMDD` once Anthropic
+    // publishes a dated release ID we want to lock to.
+    { id: 'claude-opus-4-7', label: 'Claude Opus 4.7', note: 'Best GUI grounding.' },
   ],
 };
 
