@@ -1140,7 +1140,7 @@ export const DOC_ARTICLES: DocArticle[] = [
       { kind: 'form', formId: 'support' },
       {
         kind: 'note',
-        text: "Submitting sends your message directly to admin@covetable.com.au — no email client needed. Diagnostic info (app version, OS, active provider) is included automatically so we can reproduce issues faster. If the in-app send fails, the form will offer a one-click fallback to open your email client with the same message pre-filled.",
+        text: "Diagnostic info (app version, OS, active provider) is included automatically so we can reproduce issues faster. If the in-app send fails, the form will offer a one-click fallback to open your email client with the same message pre-filled.",
       },
     ],
   },
