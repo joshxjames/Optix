@@ -40,7 +40,18 @@ export default defineConfig({
     },
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
+    // Sandboxed preload (`sandbox: true` on the BrowserWindow) runs in
+    // a restricted Electron context that cannot `require()` arbitrary
+    // node_modules — only Electron built-ins. Default
+    // `externalizeDepsPlugin()` would emit `require('zod')` for the
+    // schema validation we do here (StoredPlanSchema for the plan
+    // onChanged broadcast); that throws "module not found: zod" at
+    // preload load time, which kills the contextBridge and leaves the
+    // renderer with `window.optix === undefined` — every subsequent
+    // `window.optix.X` access then throws "Cannot read properties of
+    // undefined (reading 'X')". Excluding zod from externalization
+    // bundles it inline (~50KB) so the preload is self-contained.
+    plugins: [externalizeDepsPlugin({ exclude: ['zod'] })],
     resolve: {
       alias: {
         '@shared': resolve('src/shared'),
