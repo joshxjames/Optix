@@ -22,7 +22,15 @@
 //     dev builds will skip this check; production won't ship without it.
 
 import { app } from 'electron';
-import { autoUpdater } from 'electron-updater';
+// `electron-updater` is published as CommonJS-only and exposes its
+// surface via module.exports. Under our ESM build (package.json
+// `"type": "module"`), Node refuses to honour named imports against
+// a CJS package — hence the SyntaxError "Named export 'autoUpdater'
+// not found". Workaround per electron-updater's own docs: import the
+// default and destructure. The package's CJS exports object IS the
+// default in the ESM lens.
+import electronUpdater from 'electron-updater';
+const { autoUpdater } = electronUpdater;
 import { IPC } from '@shared/ipc';
 import type { UpdateDownloadedInfo } from '@shared/api';
 import { getWidgetWindow } from '@main/windows/widget-window';
@@ -144,14 +152,91 @@ export function initAutoUpdater(): void {
       console.warn('[optix-updater] periodic check failed:', err);
     });
   }, REPEAT_CHECK_INTERVAL_MS);
+
+  // Test hook: when `OPTIX_UPDATER_FAKE_DOWNLOADED=1` is set in the
+  // environment, fire a synthetic `update-downloaded` event 5s after
+  // init. Lets us exercise the renderer banner end-to-end without
+  // needing a real signed installer or a live update feed. No-op in
+  // production builds (the env var won't be set).
+  if (process.env.OPTIX_UPDATER_FAKE_DOWNLOADED === '1') {
+    console.info(
+      '[optix-updater] FAKE mode enabled — synthetic update-downloaded in 5s',
+    );
+    setTimeout(() => {
+      const win = getWidgetWindow();
+      if (!win || win.isDestroyed()) {
+        console.warn('[optix-updater] FAKE: widget window not available');
+        return;
+      }
+      const fakeInfo: UpdateDownloadedInfo = {
+        version: '99.0.0',
+        releaseNotes: 'Synthetic banner — OPTIX_UPDATER_FAKE_DOWNLOADED=1',
+      };
+      console.info('[optix-updater] FAKE: dispatching update-downloaded', fakeInfo);
+      win.webContents.send(IPC.updater.downloaded, fakeInfo);
+    }, 5000);
+  }
 }
 
 /** Trigger the "quit, install, relaunch" flow. Called from the
- *  updater IPC handler when the renderer's banner button fires. */
-export function quitAndInstallUpdate(): void {
-  // First arg `isSilent: false` shows the OS install UI (NSIS on
-  // Windows ticks through quickly; macOS unzips silently anyway).
-  // Second arg `isForceRunAfter: true` ensures Optix relaunches after
-  // install — without it the user would have to start the app manually.
-  autoUpdater.quitAndInstall(false, true);
+ *  updater IPC handler when the renderer's banner button fires.
+ *
+ *  Returns a Promise so the IPC layer can propagate failure back to
+ *  the renderer banner. Without this, the renderer sits on
+ *  "Restarting…" forever when:
+ *    - The staged update file is missing or corrupted (production)
+ *    - electron-updater can't acquire the install lock
+ *    - The fake-event path tries to install with nothing staged
+ *      (dev — see OPTIX_UPDATER_FAKE_DOWNLOADED in initAutoUpdater)
+ *
+ *  Resolution path: never. If the install succeeds, the app process
+ *  is gone within ~200ms and the awaited promise is GC'd along with
+ *  the renderer. The 1.5s timeout is the safety release for the
+ *  banner button — if we're still alive then, something went wrong.
+ */
+export function quitAndInstallUpdate(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const cleanup = (): void => {
+      autoUpdater.removeListener('error', onError);
+      clearTimeout(timer);
+    };
+    const onError = (err: Error): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(err);
+    };
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(
+        new Error(
+          'Update install did not start the quit sequence — no staged update?',
+        ),
+      );
+    }, 1500);
+
+    autoUpdater.once('error', onError);
+
+    try {
+      // First arg `isSilent: false` shows the OS install UI (NSIS on
+      // Windows ticks through quickly; macOS unzips silently anyway).
+      // Second arg `isForceRunAfter: true` ensures Optix relaunches
+      // after install — without it the user would have to manually
+      // re-launch the app.
+      autoUpdater.quitAndInstall(false, true);
+      // Don't resolve here — successful path means the process is
+      // about to exit. The promise gets GC'd along with the runtime.
+    } catch (err) {
+      // Synchronous throws are rare from electron-updater (it prefers
+      // the `error` event), but possible. Cover the case so the
+      // renderer always gets a definitive answer within 1.5s.
+      onError(err instanceof Error ? err : new Error(String(err)));
+    }
+    // `resolve` is intentionally unused — see comment above.
+    void resolve;
+  });
 }
+

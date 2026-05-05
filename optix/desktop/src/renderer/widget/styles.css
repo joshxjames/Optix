@@ -2686,6 +2686,12 @@ html, body {
   background: var(--accent-soft);
   border-bottom: 1px solid var(--border);
   font-size: 12px;
+  /* The widget root has `-webkit-app-region: drag` so the chrome
+     acts as a window grab handle. Without opting out, the entire
+     banner — including its buttons — gets swallowed by the drag
+     region and clicks never reach React. Match the pattern used by
+     `.widget__header` and `.widget__body` above. */
+  -webkit-app-region: no-drag;
   /* Subtle top-down slide on first appearance — keyframe one-shot,
      not infinite, so it doesn't keep drawing attention after the
      user has registered the banner. */
@@ -2723,6 +2729,15 @@ html, body {
   color: var(--fg-muted);
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 11px;
+}
+/* Inline error variant — replaces the "Update ready / vX.Y.Z" text
+   when an install attempt failed (electron-updater couldn't find the
+   staged file, perms issue, etc.). The CTA button auto-relabels to
+   "Retry" so the user has a clear next action. */
+.update-banner__error {
+  color: var(--danger, #ff7474);
+  font-size: 11px;
+  line-height: 1.35;
 }
 .update-banner__primary,
 .update-banner__dismiss {

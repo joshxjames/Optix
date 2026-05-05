@@ -8,10 +8,15 @@ import { quitAndInstallUpdate } from '@main/updater';
 
 export function registerUpdaterIpc(): void {
   ipcMain.handle(IPC.updater.installNow, async () => {
-    // Fire-and-forget — `quitAndInstall` tears down the app within a
-    // few hundred ms, so the renderer's awaited promise will never
-    // resolve in practice. That's fine; we resolve the handler
-    // synchronously to keep TypeScript happy on the bridge side.
-    quitAndInstallUpdate();
+    // Await + propagate — quitAndInstallUpdate returns a Promise that
+    // rejects on the `error` event from electron-updater (e.g. "no
+    // staged update file") or on a 1.5s timeout. Letting the rejection
+    // bubble through to the renderer's `invoke` means the banner can
+    // re-enable its button + surface a real error message instead of
+    // hanging on "Restarting…" forever.
+    //
+    // Successful path never reaches the resolution side — the app
+    // process exits before the promise can settle.
+    await quitAndInstallUpdate();
   });
 }
