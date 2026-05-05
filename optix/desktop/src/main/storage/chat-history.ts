@@ -128,22 +128,23 @@ function mimeToExtension(mime: string): string {
   }
 }
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type AppendTurnInput = {
   convId: string;
   mode: Mode;
   prompt: string;
-  attachments: Array<{ bytes: Uint8Array; mimeType: string; filename?: string }>;
-  capture?: { bytes: Uint8Array; mimeType: string; width: number; height: number };
+  attachments: Array<{ bytes: Uint8Array; mimeType: string; filename?: string | undefined }>;
+  capture?: { bytes: Uint8Array; mimeType: string; width: number; height: number } | undefined;
   /** Ask-mode result, mutually exclusive with loopId. */
-  response?: ModelResponse;
+  response?: ModelResponse | undefined;
   /** Access-mode loop id; deep-links into the audit log. */
-  loopId?: string;
-  finalText?: string;
-  errorMessage?: string;
+  loopId?: string | undefined;
+  finalText?: string | undefined;
+  errorMessage?: string | undefined;
   /** Token usage for this turn — drives Ask-log cost. */
-  usage?: TokenUsage;
-  providerId?: ProviderId;
-  modelId?: string;
+  usage?: TokenUsage | undefined;
+  providerId?: ProviderId | undefined;
+  modelId?: string | undefined;
 };
 
 export async function appendTurn(input: AppendTurnInput): Promise<ConversationTurn | null> {
@@ -231,11 +232,12 @@ export async function appendTurn(input: AppendTurnInput): Promise<ConversationTu
   return turn;
 }
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type ConversationSummary = {
   id: string;
   startedAt: string;
-  endedAt?: string;
-  title?: string;
+  endedAt?: string | undefined;
+  title?: string | undefined;
   providerId: ProviderId;
   modelId: string;
   turnCount: number;
@@ -245,18 +247,19 @@ export type ConversationSummary = {
   /** Estimated USD cost summed across the Ask turns using each turn's
    *  recorded usage block + provider/model. Undefined when no turn
    *  has usage data (legacy conversations from before token tracking). */
-  estimatedCostUsd?: number;
+  estimatedCostUsd?: number | undefined;
 };
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type ListConversationsOptions = {
   /** Page size; defaults to 100 and is hard-capped at 500 so a
    *  malicious/buggy renderer can't request "give me everything" and
    *  OOM main on a directory of thousands of conversations. */
-  limit?: number;
+  limit?: number | undefined;
   /** 0-based offset into the directory listing, sorted newest-first by
    *  filename. The renderer paginates by passing the previous call's
    *  `nextCursor` back. */
-  cursor?: number;
+  cursor?: number | undefined;
 };
 
 export type ListConversationsResult = {

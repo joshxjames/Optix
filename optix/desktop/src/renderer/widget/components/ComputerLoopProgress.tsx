@@ -14,6 +14,7 @@ import { CursorIcon } from './Icons';
 
 export type LoopStepState = 'running' | 'done' | 'failed';
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type LoopActionItem = {
   kind: 'action';
   toolUseId: string;
@@ -26,9 +27,10 @@ export type LoopActionItem = {
     | PlanToolAction['action']
     | ShellToolAction['action'];
   state: LoopStepState;
-  errorText?: string;
+  errorText?: string | undefined;
 };
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type LoopMessageItem = {
   kind: 'message';
   /** Stable key — turnIndex-based so React doesn't re-mount on rerender. */
@@ -36,7 +38,7 @@ export type LoopMessageItem = {
   text: string;
   /** Render as the conclusion at the end of the run (slightly different
    *  styling so it reads as the final summary). */
-  isFinal?: boolean;
+  isFinal?: boolean | undefined;
 };
 
 export type LoopItem = LoopActionItem | LoopMessageItem;
@@ -90,37 +92,38 @@ export const ACTION_ICON: Partial<
   type_into_label: '⌨',
 };
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 type Props = {
   /** Chronological mix of model-emitted messages and executed actions. */
   items: LoopItem[];
   turnIndex: number;
   /** True when the loop has finished — render a final-state header. */
-  done?: boolean;
+  done?: boolean | undefined;
   /** True when the loop was capped (max turns reached). */
-  capped?: boolean;
+  capped?: boolean | undefined;
   /** When set, the action with this toolUseId is awaiting per-action
    *  approval. Approve / Deny / Type-something controls render inline. */
-  pendingActionId?: string;
-  onApprove?: () => void;
-  onDeny?: () => void;
+  pendingActionId?: string | undefined;
+  onApprove?: (() => void) | undefined;
+  onDeny?: (() => void) | undefined;
   /** User typed feedback for the model — sent as a tool_result correction so
    *  the model re-plans based on what the user wants instead. */
-  onFeedback?: (text: string) => void;
+  onFeedback?: ((text: string) => void) | undefined;
   /** When set, the agent has called the `ask_user` meta tool and the
    *  loop is paused for user input. Renders a ChoicePrompt inline at
    *  the action's row; `onChoice` receives the picked value. */
-  pendingAsk?: { toolUseId: string; action: AskUserAction };
-  onChoice?: (value: string) => void;
+  pendingAsk?: { toolUseId: string; action: AskUserAction } | undefined;
+  onChoice?: ((value: string) => void) | undefined;
   /** When set, the agent proposed a plan via the `plan` tool and the
    *  loop is paused for the user to approve / deny / send feedback.
    *  Renders a PlanApprovalGate inline at the action's row. */
-  pendingPlan?: { toolUseId: string; action: PlanToolAction };
-  onPlanDecision?: (
+  pendingPlan?: { toolUseId: string; action: PlanToolAction } | undefined;
+  onPlanDecision?: ((
     decision:
       | { kind: 'approve' }
       | { kind: 'deny' }
       | { kind: 'feedback'; text: string },
-  ) => void;
+  ) => void) | undefined;
 };
 
 export function ComputerLoopProgress({

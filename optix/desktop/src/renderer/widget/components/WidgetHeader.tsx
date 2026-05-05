@@ -1,13 +1,14 @@
 import { memo } from 'react';
 import { HelpIcon } from './Icons';
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 type Props = {
   providerLabel: string;
   /** Model id to show after the provider label, e.g. "Optix Cloud · claude-opus-4-7".
    *  Omit to render just the provider label — used by Optix Cloud where the model
    *  is an internal detail (always Opus 4.7) and showing it would just clutter
    *  the header with a string the user didn't pick. */
-  modelLabel?: string;
+  modelLabel?: string | undefined;
   onDocs: () => void;
   onSettings: () => void;
   onHide: () => void;

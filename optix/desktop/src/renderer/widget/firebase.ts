@@ -158,23 +158,24 @@ export function currentUser(): { email: string; uid: string } | null {
  *  this; we only surface what the renderer cares about. Everything's
  *  optional because new accounts haven't been touched by the webhook
  *  yet. */
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type UserProfile = {
-  email?: string;
+  email?: string | undefined;
   /** 'active' | 'past_due' | 'canceled' | 'none' | etc. The relay
    *  treats anything other than 'active' as locked. */
-  subscriptionStatus?: string;
+  subscriptionStatus?: string | undefined;
   /** 'starter' | 'pro' (or undefined when never subscribed). */
-  tier?: 'starter' | 'pro';
+  tier?: 'starter' | 'pro' | undefined;
   /** Monthly token cap for the active tier. Mirrors what the relay
    *  enforces. Used to render a usage meter in Settings. */
-  tokenAllowanceMonthly?: number;
+  tokenAllowanceMonthly?: number | undefined;
   /** ISO string for when the current paid period ends (Firestore
    *  Timestamp serialised). UI shows "renews on…" / "access ends on…". */
-  currentPeriodEnd?: string;
+  currentPeriodEnd?: string | undefined;
   /** True when the user has cancelled but is still inside the paid
    *  period — the subscription stays active until `currentPeriodEnd`,
    *  then auto-deletes. Drives the "ends on" copy + Reactivate button. */
-  cancelAtPeriodEnd?: boolean;
+  cancelAtPeriodEnd?: boolean | undefined;
 };
 
 /** Sum of input + output + cache tokens consumed in the current

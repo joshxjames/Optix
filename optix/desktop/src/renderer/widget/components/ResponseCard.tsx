@@ -3,19 +3,20 @@ import type { ModelResponse, ProposedAction } from '../../../shared/schemas';
 import type { SearchSource } from '../../../shared/api';
 import type { TimingBreakdown } from '../App';
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 type Props = {
   response: ModelResponse;
-  timings?: TimingBreakdown;
+  timings?: TimingBreakdown | undefined;
   /** Kept for backwards compat — the visual badge has been removed from the
    *  card; downstream callers may still pass it, but we ignore it here. */
-  usedWebSearch?: boolean;
+  usedWebSearch?: boolean | undefined;
   /** Distinct URLs the model consulted — rendered as overlapping favicon chips. */
-  sources?: SearchSource[];
+  sources?: SearchSource[] | undefined;
   /** Pixel dimensions of the screenshot the model annotated against. Needed
    *  for translating proposed-action coordinates to display space when
    *  executing. */
-  imageWidth?: number;
-  imageHeight?: number;
+  imageWidth?: number | undefined;
+  imageHeight?: number | undefined;
 };
 
 type ActionRunState =

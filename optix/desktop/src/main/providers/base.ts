@@ -7,47 +7,49 @@ import type {
   TokenUsage,
 } from '@shared/schemas';
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type PromptInput = {
   mode: Mode;
   prompt: string;
   modelId: string;
   /** Raw image bytes — provider converts to its own format (data URL, raw base64, etc.) */
-  imageBytes?: Uint8Array;
+  imageBytes?: Uint8Array | undefined;
   /** MIME type of `imageBytes`, e.g. 'image/jpeg'. */
-  imageMimeType?: string;
+  imageMimeType?: string | undefined;
   /** User-attached reference images (uploaded via the paperclip button).
    *  Each provider should add an image block per attachment to the user-
    *  message content, BEFORE the prompt text but AFTER the screenshot
    *  (when present). */
-  imageAttachments?: ImageAttachment[];
+  imageAttachments?: ImageAttachment[] | undefined;
   /** Past Q&A pairs from the same conversation — each provider should
    *  prepend them to the message history as alternating user/assistant
    *  turns so the model has context for follow-up questions. Empty when
    *  conversationMode is off or this is the first turn. */
-  priorTurns?: PriorTurn[];
+  priorTurns?: PriorTurn[] | undefined;
   signal: AbortSignal;
   /** Called for each token delta during streaming providers. Other providers ignore. */
-  onChunk?: (delta: string) => void;
+  onChunk?: ((delta: string) => void) | undefined;
   /** Whether the provider should enable its web-search tool. */
-  webSearchEnabled?: boolean;
+  webSearchEnabled?: boolean | undefined;
   /** Fired with the search query when the model invokes web search. */
-  onSearch?: (query: string) => void;
+  onSearch?: ((query: string) => void) | undefined;
   /** Fired for each source URL the model consulted (after dedup happens upstream). */
-  onSource?: (source: { url: string; title: string }) => void;
+  onSource?: ((source: { url: string; title: string }) => void) | undefined;
   /** Fired once with the API's token usage block for cost-tracking.
    *  Each provider extracts the values it has (Anthropic exposes the
    *  full set including cache hits; OpenAI/Gemini expose the basics).
    *  Missing fields stay undefined; the cost estimator treats those
    *  as zero. Called after the provider's final response is parsed,
    *  before the function returns. */
-  onUsage?: (usage: TokenUsage) => void;
+  onUsage?: ((usage: TokenUsage) => void) | undefined;
   /** Whether the model should include target-region bounding boxes in walkthrough steps. */
-  overlayEnabled?: boolean;
+  overlayEnabled?: boolean | undefined;
 };
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type SystemPromptOptions = {
-  webSearchEnabled?: boolean;
-  overlayEnabled?: boolean;
+  webSearchEnabled?: boolean | undefined;
+  overlayEnabled?: boolean | undefined;
 };
 
 export interface Provider {

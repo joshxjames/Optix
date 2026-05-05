@@ -31,10 +31,11 @@ export async function readPlan(): Promise<StoredPlan | null> {
 /** Overwrite the plan file with the agent's new content. `createdAt`
  *  is preserved across updates so the user can see how long they've
  *  been working from this plan; `updatedAt` is bumped each save. */
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export async function savePlan(opts: {
   content: string;
-  rationale?: string;
-  loopId?: string;
+  rationale?: string | undefined;
+  loopId?: string | undefined;
 }): Promise<StoredPlan> {
   const file = getPlanFilePath();
   await mkdir(path.dirname(file), { recursive: true });

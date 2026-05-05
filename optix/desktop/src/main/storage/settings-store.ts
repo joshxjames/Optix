@@ -50,11 +50,27 @@ export function getSettings(): Settings {
   return defaults;
 }
 
-export function setSettings(patch: Partial<Settings>): Settings {
+// Round 9.2: explicit `T | undefined` value type for exactOptionalPropertyTypes —
+// PartialSettingsSchema in the IPC layer produces a value-type with `| undefined`
+// on every field, which is not assignable to a vanilla `Partial<Settings>`.
+type PartialSettingsPatch = { [K in keyof Settings]?: Settings[K] | undefined };
+
+export function setSettings(patch: PartialSettingsPatch): Settings {
   const current = getSettings();
+  // Round 9.2: strip undefined values out of the patch so the merged
+  // result satisfies the strict Settings shape under
+  // exactOptionalPropertyTypes — spread of undefined would override
+  // the current field with `undefined` in the type system.
+  const cleanPatch: Partial<Settings> = {};
+  for (const k of Object.keys(patch) as Array<keyof Settings>) {
+    const v = patch[k];
+    if (v !== undefined) {
+      (cleanPatch as Record<string, unknown>)[k] = v;
+    }
+  }
   const next: Settings = {
     ...current,
-    ...patch,
+    ...cleanPatch,
     modelByProvider: {
       ...current.modelByProvider,
       ...(patch.modelByProvider ?? {}),

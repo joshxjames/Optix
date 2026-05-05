@@ -79,6 +79,9 @@ function reportGoogleUsage(input: PromptInput, result: unknown): void {
   });
 }
 
+// Round 9.2: NonNullable<> on parameters — the SDK type widens to
+// `Schema | undefined`, which exactOptionalPropertyTypes rejects when
+// assigned into the declared `parameters?: Schema` slot.
 const WEB_SEARCH_FUNCTION: FunctionDeclaration = {
   name: 'web_search',
   description:
@@ -94,7 +97,7 @@ const WEB_SEARCH_FUNCTION: FunctionDeclaration = {
       },
     },
     required: ['query'],
-  } as unknown as FunctionDeclaration['parameters'],
+  } as unknown as NonNullable<FunctionDeclaration['parameters']>,
 };
 
 export const googleProvider: Provider = {
@@ -174,9 +177,11 @@ export const googleProvider: Provider = {
         systemInstruction,
         // The SDK's TS types lag behind the server: `googleSearch` is accepted
         // at runtime for Gemini 2.x grounding. Cast to satisfy the older types.
-        tools: [{ googleSearch: {} }] as unknown as Parameters<
+        // Round 9.2: NonNullable<> for exactOptionalPropertyTypes — the
+        // optional `tools` slot doesn't accept `undefined` values.
+        tools: [{ googleSearch: {} }] as unknown as NonNullable<Parameters<
           typeof genAI.getGenerativeModel
-        >[0]['tools'],
+        >[0]['tools']>,
       });
 
       const result = await withAbort(

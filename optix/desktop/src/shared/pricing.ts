@@ -165,8 +165,9 @@ export function costForTurn(modelId: string, usage: TokenUsage | undefined): num
 /** Sum cost across many turns. Each turn carries its own model id so
  *  mixed-provider conversations price each turn correctly. Rounded
  *  to 1/100 of a cent — anything finer is noise. */
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export function costForTurns(
-  turns: Array<{ modelId: string; usage?: TokenUsage }>,
+  turns: Array<{ modelId: string; usage?: TokenUsage | undefined }>,
 ): number {
   let total = 0;
   for (const t of turns) total += costForTurn(t.modelId, t.usage);

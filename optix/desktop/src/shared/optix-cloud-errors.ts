@@ -48,6 +48,7 @@ export type OptixCloudBillingCode =
   | 'invalid_request'
   | 'relay_unavailable';
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type OptixCloudBillingError = {
   /** HTTP status from the relay. */
   status: number;
@@ -55,12 +56,12 @@ export type OptixCloudBillingError = {
   code: OptixCloudBillingCode;
   /** Token usage at the time of the failure, when 429. Mainly for the
    *  "X / Y tokens used" line in the upgrade card. */
-  used?: number;
-  cap?: number;
+  used?: number | undefined;
+  cap?: number | undefined;
   /** The user's current tier (if any) — used by the renderer to decide
    *  whether to render an "Upgrade to Pro" CTA (Starter users) or a
    *  "Wait until renewal" message (Pro users already at the top tier). */
-  tier?: Tier;
+  tier?: Tier | undefined;
 };
 
 const PREFIX = 'OPTIX_BILLING:';

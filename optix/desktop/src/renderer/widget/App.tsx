@@ -72,9 +72,10 @@ async function getCloudAuthToken(
   return token;
 }
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type TimingBreakdown = {
-  capture?: CaptureTimings;
-  provider?: ProviderTimings;
+  capture?: CaptureTimings | undefined;
+  provider?: ProviderTimings | undefined;
 };
 
 /**
@@ -177,6 +178,7 @@ function extractWarnings(buffer: string): string[] {
   return out;
 }
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 type Status =
   | { kind: 'idle' }
   | { kind: 'capturing' }
@@ -188,7 +190,7 @@ type Status =
       imageMimeType: string;
       imageWidth: number;
       imageHeight: number;
-      imageAttachments: Array<{ bytes: Uint8Array; mimeType: string; filename?: string }>;
+      imageAttachments: Array<{ bytes: Uint8Array; mimeType: string; filename?: string | undefined }>;
     }
   | {
       kind: 'looping';
@@ -199,16 +201,16 @@ type Status =
       imageHeight: number;
       /** When set, the loop is paused awaiting user approval for this
        *  specific action (each-action mode). */
-      pendingActionId?: string;
+      pendingActionId?: string | undefined;
       /** When set, the agent has called the `ask_user` meta tool and the
        *  loop is paused on user input. The renderer shows ChoicePrompt
        *  inline; the user's selection resolves a pending promise that
        *  runLoop awaits. */
-      pendingAsk?: { toolUseId: string; action: MetaToolAction };
+      pendingAsk?: { toolUseId: string; action: MetaToolAction } | undefined;
       /** When set, the agent has proposed a plan via the `plan` tool
        *  and the loop is paused for the user to approve / deny / send
        *  feedback. The renderer shows a PlanApprovalGate inline. */
-      pendingPlan?: { toolUseId: string; action: PlanToolAction };
+      pendingPlan?: { toolUseId: string; action: PlanToolAction } | undefined;
     }
   | {
       kind: 'loop-done';
@@ -220,10 +222,10 @@ type Status =
       kind: 'done';
       response: ModelResponse;
       timings: TimingBreakdown;
-      usedWebSearch?: boolean;
-      sources?: SearchSource[];
-      imageWidth?: number;
-      imageHeight?: number;
+      usedWebSearch?: boolean | undefined;
+      sources?: SearchSource[] | undefined;
+      imageWidth?: number | undefined;
+      imageHeight?: number | undefined;
     }
   | { kind: 'error'; message: string };
 
@@ -233,6 +235,7 @@ type Status =
  * turns render statically while the current `Status` drives the active
  * card. Each terminal Status kind has a corresponding PastTurn variant.
  */
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 type PastTurn = {
   id: string;
   prompt: string;
@@ -245,10 +248,10 @@ type PastTurn = {
       kind: 'done';
       response: ModelResponse;
       timings: TimingBreakdown;
-      usedWebSearch?: boolean;
-      sources?: SearchSource[];
-      imageWidth?: number;
-      imageHeight?: number;
+      usedWebSearch?: boolean | undefined;
+      sources?: SearchSource[] | undefined;
+      imageWidth?: number | undefined;
+      imageHeight?: number | undefined;
     }
   | {
       kind: 'loop-done';
@@ -646,13 +649,14 @@ export function App() {
   // closure staleness. Set on submit when isRecording was true; the
   // loop's per-action branches push to `actions`, and turn.done
   // flushes the result via the routines IPC.
+  // Round 9.2: explicit undefined for exactOptionalPropertyTypes
   const recordingRef = useRef<{
     active: boolean;
     originalPrompt: string;
     actions: RecordedAction[];
     /** Most recent agent narration, attached to the next action so
      *  the routine preserves the model's reasoning trail per step. */
-    pendingModelText?: string;
+    pendingModelText?: string | undefined;
     /** Number of agent turns observed so far. Increments on each
      *  non-done turn that arrives during recording. Persisted on
      *  save so the routine list can show "turns × actions" the same
@@ -663,8 +667,8 @@ export function App() {
     usages: Array<{ modelId: string; usage: TokenUsage }>;
     /** Initial screenshot dimensions captured at submit time —
      *  persisted so the detail meta card can show resolution. */
-    imageWidth?: number;
-    imageHeight?: number;
+    imageWidth?: number | undefined;
+    imageHeight?: number | undefined;
   } | null>(null);
   // Active replay context — set when the user runs a routine via the
   // slash menu. Surfaces in submit() to attach the hint block to the
@@ -673,8 +677,9 @@ export function App() {
   // Mirror of the legacy-replay state for the UI badge. Refs don't
   // trigger re-renders, so we keep a small piece of state alongside
   // the ref so the source-banner can mount/unmount with it.
+  // Round 9.2: explicit undefined for exactOptionalPropertyTypes
   const [legacyReplayBadge, setLegacyReplayBadge] = useState<{
-    oaNumber?: number;
+    oaNumber?: number | undefined;
     originalPrompt: string;
   } | null>(null);
   // Slash-menu state — opens when the prompt has an active `/word`
@@ -755,15 +760,16 @@ export function App() {
   // Bytes we need to persist when the turn finalizes. Held in a ref
   // because they're write-once / read-once and shouldn't trigger renders.
   // Cleared after every finalize.
+  // Round 9.2: explicit undefined for exactOptionalPropertyTypes
   const activeTurnPersistRef = useRef<{
-    attachments: Array<{ bytes: Uint8Array; mimeType: string; filename?: string }>;
-    capture?: { bytes: Uint8Array; mimeType: string; width: number; height: number };
+    attachments: Array<{ bytes: Uint8Array; mimeType: string; filename?: string | undefined }>;
+    capture?: { bytes: Uint8Array; mimeType: string; width: number; height: number } | undefined;
     /** Token usage reported by the provider — used by chat-history
      *  for Ask-mode cost tracking. Set after `provider.prompt`
      *  resolves, before finalize fires. */
-    usage?: import('../../shared/schemas').TokenUsage;
-    providerId?: ProviderId;
-    modelId?: string;
+    usage?: import('../../shared/schemas').TokenUsage | undefined;
+    providerId?: ProviderId | undefined;
+    modelId?: string | undefined;
   } | null>(null);
 
   // Object-URL hygiene: revoke each preview URL when the chip is removed
@@ -1372,7 +1378,8 @@ export function App() {
       imageWidth: number,
       imageHeight: number,
       approvalMode: 'per-task' | 'each-action' | 'never',
-      initialAttachments: Array<{ bytes: Uint8Array; mimeType: string; filename?: string }>,
+      // Round 9.2: explicit undefined for exactOptionalPropertyTypes
+      initialAttachments: Array<{ bytes: Uint8Array; mimeType: string; filename?: string | undefined }>,
       // When set, this submit appends a NEW user message to an existing
       // paused loop (option-A continuity) instead of starting fresh.
       // Provided by the renderer when conversationMode is on AND a
@@ -1982,9 +1989,10 @@ export function App() {
           });
 
           if (!resultOk) {
+            // Round 9.2: conditional spread for exactOptionalPropertyTypes
             results.push({
               toolUseId: tu.id,
-              errorText: resultErrText,
+              ...(resultErrText !== undefined ? { errorText: resultErrText } : {}),
               durationMs: Math.round(performance.now() - actionT0),
             });
             continue;
@@ -2026,13 +2034,14 @@ export function App() {
             const ctx = await window.optix.computer
               .queryRecordingContext(point)
               .catch(() => null);
+            // Round 9.2: conditional spread for exactOptionalPropertyTypes
             rec.actions.push({
               action: tu.action,
               description: describeAction(tu.action),
-              modelText: rec.pendingModelText,
-              targetElementName: ctx?.targetElementName,
-              targetElementType: ctx?.targetElementType,
-              windowTitle: ctx?.windowTitle ?? undefined,
+              ...(rec.pendingModelText !== undefined ? { modelText: rec.pendingModelText } : {}),
+              ...(ctx?.targetElementName !== undefined ? { targetElementName: ctx.targetElementName } : {}),
+              ...(ctx?.targetElementType !== undefined ? { targetElementType: ctx.targetElementType } : {}),
+              ...(ctx?.windowTitle != null ? { windowTitle: ctx.windowTitle } : {}),
             });
             rec.pendingModelText = undefined;
           }

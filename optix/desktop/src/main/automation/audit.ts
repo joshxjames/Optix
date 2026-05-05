@@ -19,26 +19,28 @@ function describePlanAction(a: PlanToolAction): string {
 // leaves a usable record. Files live in <userData>/audit/loops/. The settings
 // "Open audit folder" button opens this directory in the OS file manager.
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type AuditActionRecord = {
   toolUseId: string;
   action: AgentAction;
   description: string;
   ok: boolean;
-  errorText?: string;
+  errorText?: string | undefined;
   resultKind: 'screenshot' | 'text' | 'error' | 'none';
   durationMs: number;
 };
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type AuditTurnRecord = {
   turnIndex: number;
   startedAt: string;
   apiMs: number;
-  stopReason?: string;
-  inputTokens?: number;
-  outputTokens?: number;
-  cacheCreationInputTokens?: number;
-  cacheReadInputTokens?: number;
-  modelText?: string;
+  stopReason?: string | undefined;
+  inputTokens?: number | undefined;
+  outputTokens?: number | undefined;
+  cacheCreationInputTokens?: number | undefined;
+  cacheReadInputTokens?: number | undefined;
+  modelText?: string | undefined;
   actions: AuditActionRecord[];
 };
 
@@ -61,10 +63,11 @@ export type AuditUserMessage = {
   firstTurnIndex: number;
 };
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type AuditLog = {
   loopId: string;
   startedAt: string;
-  endedAt?: string;
+  endedAt?: string | undefined;
   providerId: ProviderId;
   modelId: string;
   /** First user prompt — kept for backwards compatibility with old
@@ -75,10 +78,10 @@ export type AuditLog = {
   /** Every user message in order, including the initial prompt. */
   userMessages: AuditUserMessage[];
   turns: AuditTurnRecord[];
-  finalText?: string;
-  outcome?: AuditOutcome;
-  errorMessage?: string;
-  estimatedCostUsd?: number;
+  finalText?: string | undefined;
+  outcome?: AuditOutcome | undefined;
+  errorMessage?: string | undefined;
+  estimatedCostUsd?: number | undefined;
 };
 
 const audits = new Map<string, AuditLog>();
@@ -327,14 +330,15 @@ export function getEstimatedCost(loopId: string): number | undefined {
 // list infrequently and old runs are persisted, not held in memory.
 // ---------------------------------------------------------------------------
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type AuditLogSummary = {
   filename: string;
   loopId: string;
   startedAt: string;
-  endedAt?: string;
+  endedAt?: string | undefined;
   /** First user message — used as the row's headline. */
   prompt: string;
-  outcome?: AuditOutcome;
+  outcome?: AuditOutcome | undefined;
   modelId: string;
   providerId: ProviderId;
   /** Total user messages in the run. >1 means a multi-message
@@ -343,7 +347,7 @@ export type AuditLogSummary = {
   messageCount: number;
   turnCount: number;
   actionCount: number;
-  estimatedCostUsd?: number;
+  estimatedCostUsd?: number | undefined;
 };
 
 /** List all audit logs newest-first, returning lightweight summaries for the

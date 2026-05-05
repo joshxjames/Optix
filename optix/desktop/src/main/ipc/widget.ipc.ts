@@ -121,12 +121,14 @@ export function registerWidgetIpc(): void {
       ? await dialog.showOpenDialog(widget, {
           title: 'Choose workspace folder',
           properties: ['openDirectory', 'createDirectory'],
-          defaultPath: current,
+          // Round 9.2: conditional spread for exactOptionalPropertyTypes
+          ...(current !== undefined ? { defaultPath: current } : {}),
         })
       : await dialog.showOpenDialog({
           title: 'Choose workspace folder',
           properties: ['openDirectory', 'createDirectory'],
-          defaultPath: current,
+          // Round 9.2: conditional spread for exactOptionalPropertyTypes
+          ...(current !== undefined ? { defaultPath: current } : {}),
         });
     if (result.canceled || result.filePaths.length === 0) return null;
     // Realpath the picked folder so a symlink can't quietly route the

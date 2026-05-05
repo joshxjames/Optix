@@ -27,11 +27,12 @@ import type {
 
 export type { ComputerExecuteRequest, FileExecuteRequest, ShellExecuteRequest };
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type ActionExecuteRequest = {
   action: ProposedAction;
   /** Optional — image dimensions the action's coordinates are relative to. */
-  imageWidth?: number;
-  imageHeight?: number;
+  imageWidth?: number | undefined;
+  imageHeight?: number | undefined;
 };
 
 export type ActionExecuteResult = { ok: true } | { ok: false; error: string };
@@ -84,13 +85,14 @@ export type CaptureTimings = {
   totalMs: number;
 };
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type ProviderTimings = {
   apiMs: number;    // network round trip + server-side inference
   totalMs: number;  // includes JSON extract + Zod parse
-  ttftMs?: number;  // time to first streamed token (if the provider streamed)
-  streamChunks?: number;        // number of delta events received
-  streamDurationMs?: number;    // from first chunk to last
-  streamCharCount?: number;     // total chars streamed (for rate calc)
+  ttftMs?: number | undefined;  // time to first streamed token (if the provider streamed)
+  streamChunks?: number | undefined;        // number of delta events received
+  streamDurationMs?: number | undefined;    // from first chunk to last
+  streamCharCount?: number | undefined;     // total chars streamed (for rate calc)
 };
 
 export type CaptureResult = {
@@ -110,19 +112,20 @@ export type SearchSource = {
   title: string;
 };
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type PromptResult = {
   response: ModelResponse;
   timings: ProviderTimings;
   /** Set if the model invoked a web-search tool while answering. */
-  usedWebSearch?: boolean;
+  usedWebSearch?: boolean | undefined;
   /** Distinct URLs the model fetched while answering — surfaced as favicon chips. */
-  sources?: SearchSource[];
+  sources?: SearchSource[] | undefined;
   /** Token usage summed across all API round-trips this prompt
    *  triggered (single call for non-search; multiple iterations for
    *  tool loops). Optional — older providers or errored runs may
    *  return a result without usage. The renderer threads this into
    *  the conversation turn so Ask logs can show cost. */
-  usage?: import('./schemas').TokenUsage;
+  usage?: import('./schemas').TokenUsage | undefined;
 };
 
 export interface OptixApi {
@@ -244,8 +247,9 @@ export interface OptixApi {
       point?: [number, number],
     ) => Promise<{
       windowTitle: string | null;
-      targetElementName?: string;
-      targetElementType?: string;
+      // Round 9.2: explicit undefined for exactOptionalPropertyTypes
+      targetElementName?: string | undefined;
+      targetElementType?: string | undefined;
     }>;
     /** Check whether a path is inside the user's configured workspace. */
     isPathInScope: (path: string) => Promise<boolean>;
@@ -259,7 +263,8 @@ export interface OptixApi {
     export: (
       filename: string,
       format: 'json' | 'markdown' | 'text',
-    ) => Promise<{ ok: true; path: string } | { ok: false; error?: string }>;
+    // Round 9.2: explicit undefined for exactOptionalPropertyTypes
+    ) => Promise<{ ok: true; path: string } | { ok: false; error?: string | undefined }>;
     /** Delete an audit log by filename. */
     delete: (filename: string) => Promise<boolean>;
   };
@@ -267,10 +272,11 @@ export interface OptixApi {
     /** Read the saved plan, or null if none. */
     read: () => Promise<StoredPlan | null>;
     /** Overwrite the saved plan with new content. */
+    // Round 9.2: explicit undefined for exactOptionalPropertyTypes
     save: (req: {
       content: string;
-      rationale?: string;
-      loopId?: string;
+      rationale?: string | undefined;
+      loopId?: string | undefined;
     }) => Promise<StoredPlan>;
     /** Drop the saved plan. */
     clear: () => Promise<void>;
@@ -288,23 +294,25 @@ export interface OptixApi {
     readByOaNumber: (n: number) => Promise<Routine | null>;
     /** Persist a freshly-recorded run as a new routine. Returns the
      *  saved routine (with the assigned id), or null on failure. */
+    // Round 9.2: explicit undefined for exactOptionalPropertyTypes
     save: (req: {
       originalPrompt: string;
       actions: RecordedAction[];
       providerId: string;
       modelId: string;
-      name?: string;
-      turnCount?: number;
-      estimatedCostUsd?: number;
-      imageWidth?: number;
-      imageHeight?: number;
+      name?: string | undefined;
+      turnCount?: number | undefined;
+      estimatedCostUsd?: number | undefined;
+      imageWidth?: number | undefined;
+      imageHeight?: number | undefined;
     }) => Promise<Routine | null>;
     /** Edit an existing routine. Only the supplied fields are changed. */
+    // Round 9.2: explicit undefined for exactOptionalPropertyTypes
     update: (req: {
       id: string;
-      name?: string;
-      originalPrompt?: string;
-      actions?: RecordedAction[];
+      name?: string | undefined;
+      originalPrompt?: string | undefined;
+      actions?: RecordedAction[] | undefined;
     }) => Promise<Routine | null>;
     /** Drop a routine + its file. */
     delete: (id: string) => Promise<boolean>;
@@ -398,31 +406,33 @@ export interface OptixApi {
   };
 }
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type ChatHistoryAppendTurnRequest = {
   convId: string;
   mode: Mode;
   prompt: string;
-  attachments: Array<{ bytes: Uint8Array; mimeType: string; filename?: string }>;
-  capture?: { bytes: Uint8Array; mimeType: string; width: number; height: number };
-  response?: ModelResponse;
-  loopId?: string;
-  finalText?: string;
-  errorMessage?: string;
+  attachments: Array<{ bytes: Uint8Array; mimeType: string; filename?: string | undefined }>;
+  capture?: { bytes: Uint8Array; mimeType: string; width: number; height: number } | undefined;
+  response?: ModelResponse | undefined;
+  loopId?: string | undefined;
+  finalText?: string | undefined;
+  errorMessage?: string | undefined;
   /** Token usage for this turn (Ask mode). Drives Ask-log cost
    *  estimation in the viewer. Optional — Access turns currently
    *  store their token data in the audit log instead. */
-  usage?: import('./schemas').TokenUsage;
+  usage?: import('./schemas').TokenUsage | undefined;
   /** Provider/model that produced this turn — recorded per-turn so
    *  multi-provider conversations price each turn correctly. */
-  providerId?: ProviderId;
-  modelId?: string;
+  providerId?: ProviderId | undefined;
+  modelId?: string | undefined;
 };
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type ConversationSummary = {
   id: string;
   startedAt: string;
-  endedAt?: string;
-  title?: string;
+  endedAt?: string | undefined;
+  title?: string | undefined;
   providerId: ProviderId;
   modelId: string;
   turnCount: number;
@@ -431,18 +441,19 @@ export type ConversationSummary = {
   /** Estimated USD cost summed across the conversation's Ask turns
    *  using the per-turn `usage` blocks and the shared pricing table.
    *  Undefined when no turn has usage data (legacy conversations). */
-  estimatedCostUsd?: number;
+  estimatedCostUsd?: number | undefined;
 };
 
 // Mirror of the audit module's types so renderer can use them without
 // importing from main code.
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type AuditLogSummary = {
   filename: string;
   loopId: string;
   startedAt: string;
-  endedAt?: string;
+  endedAt?: string | undefined;
   prompt: string;
-  outcome?: 'done' | 'aborted' | 'capped' | 'error' | 'abandoned';
+  outcome?: 'done' | 'aborted' | 'capped' | 'error' | 'abandoned' | undefined;
   modelId: string;
   providerId: ProviderId;
   /** Number of user messages in the run. >1 ⇒ multi-message
@@ -450,15 +461,16 @@ export type AuditLogSummary = {
   messageCount: number;
   turnCount: number;
   actionCount: number;
-  estimatedCostUsd?: number;
+  estimatedCostUsd?: number | undefined;
 };
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type AuditActionRecord = {
   toolUseId: string;
   action: import('./schemas').AgentAction;
   description: string;
   ok: boolean;
-  errorText?: string;
+  errorText?: string | undefined;
   resultKind: 'screenshot' | 'text' | 'error' | 'none';
   /** Renderer-measured wall-clock duration in milliseconds. Older
    *  audit JSON has 0 here (placeholder); new runs measure actual
@@ -466,16 +478,17 @@ export type AuditActionRecord = {
   durationMs: number;
 };
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type AuditTurnRecord = {
   turnIndex: number;
   startedAt: string;
   apiMs: number;
-  stopReason?: string;
-  inputTokens?: number;
-  outputTokens?: number;
-  cacheCreationInputTokens?: number;
-  cacheReadInputTokens?: number;
-  modelText?: string;
+  stopReason?: string | undefined;
+  inputTokens?: number | undefined;
+  outputTokens?: number | undefined;
+  cacheCreationInputTokens?: number | undefined;
+  cacheReadInputTokens?: number | undefined;
+  modelText?: string | undefined;
   actions: AuditActionRecord[];
 };
 
@@ -490,10 +503,11 @@ export type AuditUserMessage = {
   firstTurnIndex: number;
 };
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type AuditLog = {
   loopId: string;
   startedAt: string;
-  endedAt?: string;
+  endedAt?: string | undefined;
   providerId: ProviderId;
   modelId: string;
   /** First user prompt — kept for backwards compatibility with old
@@ -504,25 +518,27 @@ export type AuditLog = {
   /** Every user message in order, including the initial prompt. */
   userMessages: AuditUserMessage[];
   turns: AuditTurnRecord[];
-  finalText?: string;
-  outcome?: 'done' | 'aborted' | 'capped' | 'error' | 'abandoned';
-  errorMessage?: string;
-  estimatedCostUsd?: number;
+  finalText?: string | undefined;
+  outcome?: 'done' | 'aborted' | 'capped' | 'error' | 'abandoned' | undefined;
+  errorMessage?: string | undefined;
+  estimatedCostUsd?: number | undefined;
 };
 
 // `ComputerExecuteRequest`, `FileExecuteRequest`, `ShellExecuteRequest`
 // are now zod-inferred — see shared/schemas.ts. Re-exported above.
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type ComputerExecuteResult =
-  | { ok: true; text?: string; noScreenshot?: boolean }
+  | { ok: true; text?: string | undefined; noScreenshot?: boolean | undefined }
   | { ok: false; error: string };
 
 export type FileExecuteResult =
   | { ok: true; output: string }
   | { ok: false; error: string };
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type ShellExecuteResult =
   | { ok: true; output: string; exitCode: number }
-  | { ok: false; error: string; output?: string; exitCode?: number };
+  | { ok: false; error: string; output?: string | undefined; exitCode?: number | undefined };
 
 declare global {
   interface Window {

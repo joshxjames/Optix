@@ -347,18 +347,19 @@ export type Routine = z.infer<typeof RoutineSchema>;
 
 /** Lightweight summary for the list view — keeps the on-disk JSON
  *  parse cheap by not loading every action's full payload. */
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type RoutineSummary = {
   id: string;
-  oaNumber?: number;
+  oaNumber?: number | undefined;
   name: string;
   originalPrompt: string;
   createdAt: string;
   updatedAt: string;
   actionCount: number;
-  turnCount?: number;
-  estimatedCostUsd?: number;
-  imageWidth?: number;
-  imageHeight?: number;
+  turnCount?: number | undefined;
+  estimatedCostUsd?: number | undefined;
+  imageWidth?: number | undefined;
+  imageHeight?: number | undefined;
   providerId: string;
   modelId: string;
 };

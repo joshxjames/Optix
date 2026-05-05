@@ -201,21 +201,22 @@ async function backfillOaNumbers(routines: Routine[]): Promise<Routine[]> {
  *  pipeline calls this on loop completion when the Record toggle was
  *  active. Fails silently (returns null) on any write error so a
  *  failed save doesn't break the loop's own teardown. */
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export async function saveNewRoutine(opts: {
   originalPrompt: string;
   actions: RecordedAction[];
   providerId: string;
   modelId: string;
   /** Optional caller-supplied name; defaults to a trimmed prompt. */
-  name?: string;
+  name?: string | undefined;
   /** Number of agent turns the recording spanned (renderer-tracked). */
-  turnCount?: number;
+  turnCount?: number | undefined;
   /** Total API cost (USD) for the recording run, summed by the
    *  renderer using `costForTurns`. */
-  estimatedCostUsd?: number;
+  estimatedCostUsd?: number | undefined;
   /** Initial screenshot dimensions at record time. */
-  imageWidth?: number;
-  imageHeight?: number;
+  imageWidth?: number | undefined;
+  imageHeight?: number | undefined;
 }): Promise<Routine | null> {
   if (opts.actions.length === 0) return null;
   const id = randomUUID();
@@ -312,9 +313,10 @@ export async function readRoutine(id: string): Promise<Routine | null> {
 /** Overwrite an existing routine with edited fields. Only `name`,
  *  `originalPrompt`, and `actions` are user-editable; the rest stays
  *  pinned to the original recording. `updatedAt` is bumped. */
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export async function updateRoutine(
   id: string,
-  patch: { name?: string; originalPrompt?: string; actions?: RecordedAction[] },
+  patch: { name?: string | undefined; originalPrompt?: string | undefined; actions?: RecordedAction[] | undefined },
 ): Promise<Routine | null> {
   const existing = await readRoutine(id);
   if (!existing) return null;

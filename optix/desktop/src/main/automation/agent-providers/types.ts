@@ -24,20 +24,21 @@ export type AgentToolUse = { id: string; action: AgentAction };
 
 /** Host-supplied result of executing one tool_use. The adapter converts
  *  this into the provider-native tool_result shape inside `appendResults`. */
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type AgentToolResult = {
   toolUseId: string;
   /** Post-action screenshot (computer actions). */
-  screenshotBytes?: Uint8Array;
-  screenshotMimeType?: string;
+  screenshotBytes?: Uint8Array | undefined;
+  screenshotMimeType?: string | undefined;
   /** Plain-text result (file actions, cursor_position). */
-  text?: string;
+  text?: string | undefined;
   /** Failure message — surfaced as an `is_error` tool_result so the
    *  model can retry. */
-  errorText?: string;
+  errorText?: string | undefined;
   /** Renderer-measured wall-clock duration for executing this tool —
    *  includes settle delay and post-action screenshot capture. Stored
    *  in the audit log; the model never sees it. */
-  durationMs?: number;
+  durationMs?: number | undefined;
 };
 
 /** What `step()` returns to the loop driver. */
@@ -50,17 +51,19 @@ export type AgentTurnResult = {
   parseErrorIds: string[];
   /** Model's natural-language text for this turn (narration or final
    *  wrap-up). */
-  finalText?: string;
+  // Round 9.2: explicit undefined for exactOptionalPropertyTypes
+  finalText?: string | undefined;
   /** True when the model emitted no tool_uses — task is complete. */
   done: boolean;
   /** Telemetry for the audit log. Optional fields are best-effort —
    *  providers that don't expose them just leave them undefined. */
   apiMs: number;
-  stopReason?: string;
-  inputTokens?: number;
-  outputTokens?: number;
-  cacheCreationInputTokens?: number;
-  cacheReadInputTokens?: number;
+  // Round 9.2: explicit undefined for exactOptionalPropertyTypes
+  stopReason?: string | undefined;
+  inputTokens?: number | undefined;
+  outputTokens?: number | undefined;
+  cacheCreationInputTokens?: number | undefined;
+  cacheReadInputTokens?: number | undefined;
 };
 
 export type AgentInitOpts = {
@@ -74,7 +77,8 @@ export type AgentInitOpts = {
   workspaceFolder: string | null;
   /** User-attached reference images; appear in the same initial user
    *  message as the screenshot, before the prompt text. */
-  imageAttachments?: Array<{ bytes: Uint8Array; mimeType: string; filename?: string }>;
+  // Round 9.2: explicit undefined for exactOptionalPropertyTypes
+  imageAttachments?: Array<{ bytes: Uint8Array; mimeType: string; filename?: string | undefined }> | undefined;
 };
 
 /** Adapter shape. State is opaque to the loop driver — each provider
@@ -98,7 +102,8 @@ export interface AgentProviderAdapter<State = unknown> {
   appendResults(
     state: State,
     results: AgentToolResult[],
-    opts?: { extraUserText?: string },
+    // Round 9.2: explicit undefined for exactOptionalPropertyTypes
+    opts?: { extraUserText?: string | undefined },
   ): void;
   /** Append a brand-new user message to a paused conversation. Used in
    *  conversationMode for follow-up submits — the agent retains full
@@ -157,12 +162,13 @@ export interface AgentProviderAdapter<State = unknown> {
   cleanupState?(state: State): void;
 }
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type AppendUserTurnOpts = {
   prompt: string;
   /** Fresh screenshot (optional — privacy-paused submits skip it). */
-  imageBytes?: Uint8Array;
-  imageMimeType?: string;
-  imageWidth?: number;
-  imageHeight?: number;
-  imageAttachments?: Array<{ bytes: Uint8Array; mimeType: string; filename?: string }>;
+  imageBytes?: Uint8Array | undefined;
+  imageMimeType?: string | undefined;
+  imageWidth?: number | undefined;
+  imageHeight?: number | undefined;
+  imageAttachments?: Array<{ bytes: Uint8Array; mimeType: string; filename?: string | undefined }> | undefined;
 };

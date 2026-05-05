@@ -50,23 +50,24 @@ async function getRobot(): Promise<Robot> {
 
 export type ExecuteResult = { ok: true } | { ok: false; error: string };
 
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type ExecuteOptions = {
   /** Pixel dimensions the model's coordinates are relative to (typically
    *  the screenshot we sent). Used to scale to the actual display. */
-  imageWidth?: number;
-  imageHeight?: number;
+  imageWidth?: number | undefined;
+  imageHeight?: number | undefined;
   /** When true, click-style actions are snapped to the nearest interactive
    *  UIA element before executing. Use for providers whose pixel-
    *  coordinate generation is unreliable (Kimi, Gemini); harmless on
    *  accurate providers (Anthropic, OpenAI) but adds ~150-300ms per click
    *  for the UIA enumeration. */
-  snapToUia?: boolean;
+  snapToUia?: boolean | undefined;
   /** HWND (decimal string) of the foreground window the loop captured at
    *  start. When set, destructive actions (click, type, key) re-query the
    *  current foreground before dispatching robotjs and refuse if the user
    *  Alt-Tabbed away mid-loop. Optional — callers that don't know the
    *  expected HWND skip the check. */
-  expectedForegroundHwnd?: string;
+  expectedForegroundHwnd?: string | undefined;
 };
 
 // Auto-snap radius for SPATIAL-ONLY snap (no `target` label provided).

@@ -48,6 +48,7 @@ function relativeTime(iso: string): string {
  * <img> tag can display the binary. Object URLs are revoked on unmount
  * to avoid leaking memory across many opens.
  */
+// Round 9.2: explicit undefined for exactOptionalPropertyTypes
 function AttachmentThumb({
   convId,
   relPath,
@@ -55,7 +56,7 @@ function AttachmentThumb({
 }: {
   convId: string;
   relPath: string;
-  filename?: string;
+  filename?: string | undefined;
 }) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
