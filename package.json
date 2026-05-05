@@ -2,8 +2,8 @@
   "name": "optix",
   "version": "0.1.0",
   "private": true,
-  "description": "Optix — an open-source desktop AI teacher that can see your screen and guide you.",
-  "license": "MIT",
+  "description": "Optix — desktop AI assistant that can see your screen, answer, act, and automate.",
+  "license": "UNLICENSED",
   "packageManager": "pnpm@9.12.0",
   "engines": {
     "node": ">=22"

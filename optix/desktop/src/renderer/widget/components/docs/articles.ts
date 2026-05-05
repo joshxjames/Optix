@@ -13,7 +13,13 @@ export type DocBlock =
   | { kind: 'h'; text: string }
   | { kind: 'ul'; items: string[] }
   | { kind: 'note'; text: string }
-  | { kind: 'code'; text: string };
+  | { kind: 'code'; text: string }
+  /** Embedded interactive form. The DocsViewer dispatches on `formId` to
+   *  render the right component — keeps the article model declarative
+   *  while allowing one-off interactive surfaces inside otherwise-static
+   *  copy. Add a new `formId` literal alongside the matching component
+   *  in DocsViewer when a new form is needed. */
+  | { kind: 'form'; formId: 'support' };
 
 export type DocArticle = {
   id: string;
@@ -36,6 +42,7 @@ export const DOC_CATEGORIES: string[] = [
   'Settings reference',
   'Optix Cloud',
   'Tips',
+  'Support',
 ];
 
 export const DOC_ARTICLES: DocArticle[] = [
@@ -1098,6 +1105,42 @@ export const DOC_ARTICLES: DocArticle[] = [
       {
         kind: 'p',
         text: "By design — compact mode is locked at the bottom-right of the current monitor. Expand to drag, then collapse again when you're done.",
+      },
+    ],
+  },
+
+  // -------------------------------------------------------------------------
+  // Support
+  // -------------------------------------------------------------------------
+  {
+    id: 'getting-help',
+    category: 'Support',
+    title: 'Getting help',
+    summary: 'Reach out about a bug, feature request, or anything else.',
+    blocks: [
+      {
+        kind: 'p',
+        text: "If something isn't working, you've found a bug, or you want to suggest a feature, send a message via the form below. Replies usually come within 1–2 business days.",
+      },
+      {
+        kind: 'p',
+        text: "Common things to mention: which mode you were in (Ask / Access / Automate), which provider, what the agent did vs what you expected, and any error messages from the toast or the audit log.",
+      },
+      { kind: 'h', text: 'Before you submit' },
+      {
+        kind: 'ul',
+        items: [
+          "Check the Audit log button in the header — most Access/Automate runs leave a JSON record there with messages, actions, errors, and timing.",
+          "Try the same prompt with a different provider — visual click accuracy varies a lot, especially on Kimi and Gemini.",
+          "If the widget itself is misbehaving (won't open, hotkey stuck, etc.), restart the app first; some bugs only repro on cold-start and we want to know.",
+          "For privacy-related concerns, mention that explicitly — those go to the top of the queue.",
+        ],
+      },
+      { kind: 'h', text: 'Send a message' },
+      { kind: 'form', formId: 'support' },
+      {
+        kind: 'note',
+        text: "Submitting opens your default mail client with a pre-filled message addressed to admin@covetable.com.au. Edit it before sending if you want — diagnostic info (app version, OS, active provider) is included automatically so we can reproduce issues faster.",
       },
     ],
   },

@@ -6,9 +6,16 @@ import {
   type DocBlock,
 } from './docs/articles';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { SupportForm } from './SupportForm';
 
 type Props = {
   onClose: () => void;
+  /** Active provider — surfaced into the support form's diagnostics block.
+   *  Optional so the docs viewer still works before any provider's chosen. */
+  activeProvider?: string;
+  /** Optix Cloud signed-in email — pre-fills the support form's reply-to
+   *  field. Optional for BYO-key users who never sign in. */
+  signedInEmail?: string;
 };
 
 type View =
@@ -17,8 +24,16 @@ type View =
 
 /** Render one block of a doc article. The block model is intentionally
  *  small — we don't ship a Markdown library; the renderer's job is
- *  just to map each kind to a styled element. */
-function renderBlock(block: DocBlock, idx: number): JSX.Element {
+ *  just to map each kind to a styled element. The `form` kind dispatches
+ *  on `formId` to a per-form component (currently only `support`). */
+function renderBlock(
+  block: DocBlock,
+  idx: number,
+  formProps: {
+    activeProvider?: string | undefined;
+    signedInEmail?: string | undefined;
+  },
+): JSX.Element {
   switch (block.kind) {
     case 'h':
       return (
@@ -52,12 +67,28 @@ function renderBlock(block: DocBlock, idx: number): JSX.Element {
           {block.text}
         </pre>
       );
+    case 'form':
+      switch (block.formId) {
+        case 'support':
+          return (
+            <SupportForm
+              key={idx}
+              {...(formProps.activeProvider !== undefined
+                ? { activeProvider: formProps.activeProvider }
+                : {})}
+              {...(formProps.signedInEmail !== undefined
+                ? { signedInEmail: formProps.signedInEmail }
+                : {})}
+            />
+          );
+      }
   }
 }
 
-export function DocsViewer({ onClose }: Props) {
+export function DocsViewer({ onClose, activeProvider, signedInEmail }: Props) {
   const [view, setView] = useState<View>({ kind: 'list' });
   const [filter, setFilter] = useState('');
+  const formProps = { activeProvider, signedInEmail };
 
   // Group + filter the article list. We keep the source order from
   // `articles.ts` so editorial sequence is preserved per category.
@@ -160,7 +191,7 @@ export function DocsViewer({ onClose }: Props) {
             {view.article.summary}
           </p>
           <article className="docs__article">
-            {view.article.blocks.map(renderBlock)}
+            {view.article.blocks.map((b, i) => renderBlock(b, i, formProps))}
           </article>
         </div>
       )}

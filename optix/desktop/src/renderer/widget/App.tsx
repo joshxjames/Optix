@@ -3392,7 +3392,15 @@ export function App() {
   if (showDocs) {
     return (
       <div className="widget">
-        <DocsViewer onClose={() => setShowDocs(false)} />
+        <DocsViewer
+          onClose={() => setShowDocs(false)}
+          {...(settings?.activeProviderId !== undefined
+            ? { activeProvider: settings.activeProviderId }
+            : {})}
+          {...(userProfile?.email !== undefined
+            ? { signedInEmail: userProfile.email }
+            : {})}
+        />
       </div>
     );
   }

@@ -2577,3 +2577,69 @@ html, body {
   gap: 8px;
   justify-content: flex-end;
 }
+
+/* Support form embedded in the docs viewer's "Getting help" article.
+   The form lives inside `.docs__article` so it inherits the article
+   typography/width but overrides spacing for input controls. */
+.support-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  margin: 12px 0;
+  background: var(--bg-recess);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.support-form__row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.support-form__label {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.support-form__label em {
+  font-style: normal;
+  color: var(--text-muted);
+  opacity: 0.7;
+  font-weight: 400;
+}
+.support-form__input {
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  outline: none;
+}
+.support-form__input:focus {
+  border-color: var(--accent);
+}
+.support-form__textarea {
+  resize: vertical;
+  min-height: 80px;
+  line-height: 1.4;
+}
+.support-form__counter {
+  font-size: 11px;
+  color: var(--text-muted);
+  align-self: flex-end;
+}
+.support-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+.support-form--sent {
+  align-items: flex-start;
+}
+.support-form--sent p {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  color: var(--text);
+}

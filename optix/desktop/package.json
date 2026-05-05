@@ -2,7 +2,8 @@
   "name": "@optix/desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Optix desktop app — floating AI teacher widget.",
+  "description": "Optix desktop app — floating AI widget that can see, answer, act, and automate.",
+  "license": "UNLICENSED",
   "main": "./out/main/index.js",
   "type": "module",
   "scripts": {
