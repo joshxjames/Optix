@@ -5,7 +5,11 @@ export type StagedAttachment = {
   filename: string;
   mimeType: string;
   bytes: Uint8Array;
-  /** Object URL for thumbnail rendering — created on add, revoked on remove. */
+  /** Object URL for thumbnail rendering — created on add, revoked on remove.
+   *  Lifecycle is owned by the parent (App.tsx around lines 766/808/815) which
+   *  calls `URL.revokeObjectURL` on submit / remove / clear. This component
+   *  intentionally does NOT revoke in a `useEffect` cleanup because remount
+   *  during normal re-renders would destroy still-live URLs. */
   previewUrl: string;
 };
 

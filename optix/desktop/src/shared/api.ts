@@ -10,7 +10,6 @@ import type {
   Conversation,
   ConversationTurn,
   FileExecuteRequest,
-  HistoryEntry,
   LabelToolAction,
   Mode,
   ModelResponse,
@@ -155,10 +154,6 @@ export interface OptixApi {
     hasApiKey: (providerId: ProviderId) => Promise<boolean>;
     deleteApiKey: (providerId: ProviderId) => Promise<void>;
     onChange: (cb: (settings: Settings) => void) => () => void;
-  };
-  history: {
-    list: () => Promise<HistoryEntry[]>;
-    clear: () => Promise<void>;
   };
   widget: {
     hide: () => Promise<void>;

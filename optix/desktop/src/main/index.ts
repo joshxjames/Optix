@@ -24,7 +24,6 @@ import { getPrimarySource, invalidateSourceIdCache } from '@main/capture/screen'
 import { getWorker as getOcrWorker, terminateOcrWorker } from '@main/capture/ocr';
 import { registerProviderIpc } from '@main/ipc/provider.ipc';
 import { registerSettingsIpc } from '@main/ipc/settings.ipc';
-import { registerHistoryIpc } from '@main/ipc/history.ipc';
 import { registerWidgetIpc } from '@main/ipc/widget.ipc';
 import { registerOverlayIpc } from '@main/ipc/overlay.ipc';
 import { registerActionIpc } from '@main/ipc/action.ipc';
@@ -111,7 +110,6 @@ app.whenReady().then(() => {
 
   registerProviderIpc();
   registerSettingsIpc();
-  registerHistoryIpc();
   registerWidgetIpc();
   registerOverlayIpc();
   registerActionIpc();

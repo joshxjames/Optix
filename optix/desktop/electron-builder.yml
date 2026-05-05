@@ -20,9 +20,17 @@ asar: true
 #   - any resource that needs a real fs path passed to a native API.
 # Add entries here as native deps are introduced. Globs are evaluated
 # against the bundled package.json's dependencies.
+#
+# The catch-all `**/*.node` line is the safety net: any prebuilt native
+# binding shipped by a transitive dep gets unpacked automatically.
+# The narrower entry below targets @hurdlegroup/robotjs (a fork of the
+# original robotjs package) whose prebuilds live under
+# `prebuilds/<platform>/<name>.node`. We only unpack those `.node` files,
+# not the whole package — sources, headers, and binding.gyp don't need
+# to live on disk at runtime.
 asarUnpack:
   - "**/*.node"
-  - node_modules/robotjs/**/*
+  - node_modules/@hurdlegroup/robotjs/prebuilds/**/*.node
 
 # Maximum compression — slower builds, smaller installers. Optional;
 # remove if CI build time becomes a problem.
@@ -36,16 +44,22 @@ mac:
   hardenedRuntime: true
   # Gatekeeper assessment must remain on for distributed builds.
   gatekeeperAssess: false
-  # TODO: add real signing identity before live release. Use a
-  # "Developer ID Application: <Team Name> (<TEAM_ID>)" cert imported
-  # into the macOS keychain. Leave null in CI dev builds so the
-  # pipeline doesn't fail when no cert is available.
+  # TODO (Phase E — code signing): add real signing identity before live
+  # release. Use a "Developer ID Application: <Team Name> (<TEAM_ID>)"
+  # cert imported into the macOS keychain. Leave null in CI dev builds
+  # so the pipeline doesn't fail when no cert is available.
   identity: null
-  # TODO: add notarization config before live release. Recommended:
-  # set APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID env vars
-  # in CI and switch this block to:
+  # TODO (Phase E — notarization): switch this block on once the Apple
+  # Developer account + app-specific password are provisioned. Required
+  # CI secrets / env vars:
+  #   - APPLE_ID                       (Apple ID email)
+  #   - APPLE_APP_SPECIFIC_PASSWORD    (generated at appleid.apple.com)
+  #   - APPLE_TEAM_ID                  (10-char Team ID from developer.apple.com)
+  # Then replace `notarize: false` with:
   #   notarize:
   #     teamId: ${env.APPLE_TEAM_ID}
+  # electron-builder reads APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD from
+  # the environment automatically.
   notarize: false
   # Entitlements file (create resources/entitlements.mac.plist with
   # com.apple.security.cs.allow-jit etc. if/when JIT-using deps land).
@@ -55,8 +69,11 @@ mac:
 win:
   target: portable
   artifactName: ${productName}-${version}.${ext}
-  # TODO: add real Authenticode signing config before live release.
-  # Recommended for CI:
+  # TODO (Phase E — Authenticode signing): wire signtool once a code
+  # signing certificate is procured. Required CI secrets / env vars:
+  #   - WINDOWS_CERT_FILE        (path to the .pfx file in the runner)
+  #   - WINDOWS_CERT_PASSWORD    (password for the .pfx)
+  # Then add the following block under `win:`:
   #   signtoolOptions:
   #     certificateFile: ${env.WINDOWS_CERT_FILE}
   #     certificatePassword: ${env.WINDOWS_CERT_PASSWORD}
@@ -67,4 +84,15 @@ win:
   # Leaving certificateFile unset for now so unsigned dev builds work.
   # certificateFile: null
 
+# TODO (Phase E — auto-update): integrate electron-updater. Set up an
+# update feed (GitHub Releases is the common choice) and replace this
+# block with the appropriate `publish:` provider config, e.g.:
+#   publish:
+#     provider: github
+#     owner: <gh-org>
+#     repo:  optix
+# After that, wire `autoUpdater` from `electron-updater` in main/index.ts
+# (checkForUpdatesAndNotify on app ready, with quitAndInstall on the
+# `update-downloaded` event). `publish: null` disables publishing for
+# now so local + CI builds don't try to upload artifacts.
 publish: null

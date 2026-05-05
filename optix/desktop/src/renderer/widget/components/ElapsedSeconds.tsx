@@ -18,7 +18,14 @@ function ElapsedSecondsImpl({ since }: Props) {
   // state if the parent reuses this instance with a new start time.)
   const [elapsed, setElapsed] = useState(() => Math.floor((Date.now() - since) / 1000));
 
+  // `since` is in the dep array intentionally so the interval is
+  // re-created with a fresh closure when the parent passes a new start
+  // time. Without it the interval would forever close over the original
+  // `since`, producing a stale elapsed count after a parent reuse.
   useEffect(() => {
+    // Sync immediately so a `since` change is reflected before the
+    // first interval tick (~1s lag would otherwise be visible).
+    setElapsed(Math.floor((Date.now() - since) / 1000));
     const interval = setInterval(() => {
       setElapsed(Math.floor((Date.now() - since) / 1000));
     }, 1000);

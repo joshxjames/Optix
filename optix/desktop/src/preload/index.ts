@@ -178,10 +178,6 @@ const api: OptixApi = {
       return () => ipcRenderer.removeListener(IPC.settings.changed, listener);
     },
   },
-  history: {
-    list: () => ipcRenderer.invoke(IPC.history.list),
-    clear: () => ipcRenderer.invoke(IPC.history.clear),
-  },
   widget: {
     hide: () => ipcRenderer.invoke(IPC.widget.hide),
     setFocusable: (focusable) =>

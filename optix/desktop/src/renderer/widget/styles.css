@@ -594,6 +594,47 @@ html, body {
   opacity: 0.4;
   cursor: default;
 }
+/* Keyboard-focus ring for icon-only buttons. Without this, tab
+   navigation lands on icon buttons but produces no visible cue —
+   mouse-only users are unaffected (`:focus-visible` skips them) but
+   keyboard / a11y users get a clear indicator. */
+.btn--icon:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Legacy routine replay badge — shown when /OA-N matches a routine
+   recorded before sequential OA numbers existed. We replace the user's
+   prompt with the saved one; the badge surfaces that substitution so a
+   user can't be tricked into running an attacker-edited routine without
+   noticing. Dismissible × clears the banner without aborting the run. */
+.widget__legacy-replay-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin: 0 0 8px 0;
+  background: rgba(109, 140, 255, 0.12);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--text);
+}
+.widget__legacy-replay-badge__dismiss {
+  margin-left: auto;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+.widget__legacy-replay-badge__dismiss:hover {
+  color: var(--text);
+}
 
 /* Mode switch */
 .mode-switch {

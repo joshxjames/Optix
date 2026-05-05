@@ -114,7 +114,10 @@ function titleFor(code: ReturnType<typeof decodeOptixCloudBillingError> extends 
     ? C
     : never
   : never): string {
-  switch (code) {
+  // Cast to string for the switch so we can also recognise codes that
+  // Fix Agent D may add to the shared `OptixCloudBillingCode` union
+  // before the renderer is rebuilt against the new types.
+  switch (code as string) {
     case 'monthly_allowance_exceeded':
       return 'Monthly token allowance exhausted';
     case 'subscription_inactive':
@@ -123,6 +126,16 @@ function titleFor(code: ReturnType<typeof decodeOptixCloudBillingError> extends 
       return 'Subscription not fully ready';
     case 'no_user_record':
       return 'Account still being set up';
+    case 'invalid_auth':
+      return 'Sign-in expired';
+    case 'rate_limited':
+      return 'Too many requests';
+    case 'model_not_available':
+      return 'Model unavailable';
+    case 'invalid_request':
+      return 'Request rejected';
+    case 'relay_unavailable':
+      return 'Optix Cloud unreachable';
     default:
       return 'Optix Cloud is unavailable';
   }
@@ -132,7 +145,7 @@ function bodyFor(
   billing: NonNullable<ReturnType<typeof decodeOptixCloudBillingError>>,
   profile: UserProfile | null,
 ): string {
-  switch (billing.code) {
+  switch (billing.code as string) {
     case 'monthly_allowance_exceeded': {
       const cap = billing.cap ?? profile?.tokenAllowanceMonthly;
       const renewsOn = profile?.currentPeriodEnd
@@ -155,6 +168,16 @@ function bodyFor(
       return 'Your subscription is active but missing its token allowance — usually a brief webhook delay. Try the prompt again in a few seconds.';
     case 'no_user_record':
       return "We're still finishing your account setup. Try the prompt again in a few seconds — this should clear on its own.";
+    case 'invalid_auth':
+      return 'Your sign-in token is no longer valid. Open Settings and sign in again to continue.';
+    case 'rate_limited':
+      return 'Optix Cloud is throttling requests right now. Wait a few seconds and try the prompt again.';
+    case 'model_not_available':
+      return 'The selected model is temporarily unavailable. Pick a different model in Settings and try again.';
+    case 'invalid_request':
+      return 'The request was rejected as malformed. Edit your prompt (or the attached files) and try again.';
+    case 'relay_unavailable':
+      return "We can't reach Optix Cloud right now. Try again in a moment — if it persists, check your network connection.";
     default:
       return 'Optix Cloud returned an unexpected error.';
   }
@@ -175,10 +198,13 @@ function renderAction(
 ): JSX.Element {
   const busy = ctx.actionState.kind === 'busy';
 
-  // Starter user hit the cap → show the upgrade button inline. Pro
-  // users can't upgrade further; just show "Open Settings" so they can
-  // see the renewal date / cancel / etc. without leaving the surface.
-  if (billing.code === 'monthly_allowance_exceeded') {
+  // Switch on the structured code rather than chained ifs so adding new
+  // codes in the future is local. We branch by code first, then for the
+  // allowance case branch on tier (Starter shows in-place upgrade,
+  // Pro shows Open Settings since they're already at the top tier).
+  const code = billing.code as string;
+
+  if (code === 'monthly_allowance_exceeded') {
     if (profile?.tier === 'starter') {
       return (
         <button
@@ -187,7 +213,7 @@ function renderAction(
           onClick={ctx.upgradeToPro}
           disabled={busy}
         >
-          {busy ? 'Upgrading Plan…' : 'Upgrade to Pro'}
+          {busy ? 'Upgrading Plan…' : 'Upgrade plan'}
         </button>
       );
     }
@@ -203,8 +229,27 @@ function renderAction(
     );
   }
 
-  // Subscription not active or incomplete → only place to fix is
-  // Settings (sign-in form, pricing cards, payment-method portal).
+  // Per-code action labels. Each maps to a Settings-opening button
+  // because the renderer doesn't host inline retry/sign-in/model-pick UI;
+  // Settings owns those flows. Distinct labels still help the user
+  // understand what to do once they get there.
+  const ctaLabel =
+    code === 'subscription_incomplete'
+      ? 'Continue checkout'
+      : code === 'no_user_record'
+        ? 'Sign in'
+        : code === 'invalid_auth'
+          ? 'Sign in again'
+          : code === 'rate_limited'
+            ? 'Wait and retry'
+            : code === 'model_not_available'
+              ? 'Choose another model'
+              : code === 'invalid_request'
+                ? 'Edit your prompt'
+                : code === 'relay_unavailable'
+                  ? 'Try again shortly'
+                  : 'Open Settings';
+
   return (
     <button
       type="button"
@@ -212,7 +257,7 @@ function renderAction(
       onClick={ctx.onOpenSettings}
       disabled={busy}
     >
-      Open Settings
+      {ctaLabel}
     </button>
   );
 }

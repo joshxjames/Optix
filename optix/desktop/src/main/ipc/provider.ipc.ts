@@ -9,7 +9,6 @@ import {
 import { getProvider } from '@main/providers/registry';
 import { getApiKey } from '@main/security/keychain';
 import { getSettings, getModelFor } from '@main/storage/settings-store';
-import { record } from '@main/session/history';
 import { runOcr, type OcrBox } from '@main/capture/ocr';
 import { snapRegionsToOcr, countSnapped } from '@main/capture/snap-to-ocr';
 import { getUiaElements, type UiaElement } from '@main/capture/uia';
@@ -477,7 +476,10 @@ export function registerProviderIpc(): void {
         }
       }
 
-      record(req, activeProviderId, modelId, { response: refined });
+      // (Round 7: dropped legacy in-memory `record(...)` call. The
+      // session-history ring buffer it wrote to was Phase-1 dead code
+      // displaced by the persistent chat-history store; renderer never
+      // consumed it.)
       const sources = Array.from(sourcesByUrl.values()).slice(0, 8);
       // Trim totalUsage to undefined keys removed so the wire payload
       // doesn't carry zeroes when the provider never reported usage
@@ -501,7 +503,8 @@ export function registerProviderIpc(): void {
       console.log(
         `[optix-timing] provider=${activeProviderId} model=${modelId} mode=${req.mode} FAILED after=${Math.round(tErr - t0)}ms err=${message}`,
       );
-      record(req, activeProviderId, modelId, { error: message });
+      // (Round 7: dropped legacy in-memory `record(error)` call — see
+      // success-path comment above.)
       // Don't re-throw the raw provider/SDK error — it can carry stack
       // traces, internal URLs, or HTTP body fragments that leak into
       // the renderer. Surface a stable, sanitized Error with a generic

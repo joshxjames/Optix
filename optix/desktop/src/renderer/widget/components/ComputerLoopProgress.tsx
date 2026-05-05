@@ -151,8 +151,9 @@ export function ComputerLoopProgress({
   // changes.
   const lastItemRef = useRef<HTMLLIElement | null>(null);
   useEffect(() => {
-    if (!lastItemRef.current) return;
-    lastItemRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    // Optional-chain on `current` so a render with zero items (where the
+    // ref hasn't attached to anything) is a no-op rather than a crash.
+    lastItemRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [items.length, pendingActionId, pendingAsk?.toolUseId, pendingPlan?.toolUseId, done]);
 
   return (

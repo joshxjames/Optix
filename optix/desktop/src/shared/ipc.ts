@@ -29,10 +29,6 @@ export const IPC = {
     deleteApiKey: 'settings:deleteApiKey',
     changed: 'settings:changed',
   },
-  history: {
-    list: 'history:list',
-    clear: 'history:clear',
-  },
   widget: {
     hide: 'widget:hide',
     // Toggle whether the widget can receive keyboard focus. Used during

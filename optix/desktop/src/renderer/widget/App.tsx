@@ -670,6 +670,13 @@ export function App() {
   // slash menu. Surfaces in submit() to attach the hint block to the
   // user's prompt before sending it to the agent. Cleared after submit.
   const replayingRoutineRef = useRef<Routine | null>(null);
+  // Mirror of the legacy-replay state for the UI badge. Refs don't
+  // trigger re-renders, so we keep a small piece of state alongside
+  // the ref so the source-banner can mount/unmount with it.
+  const [legacyReplayBadge, setLegacyReplayBadge] = useState<{
+    oaNumber?: number;
+    originalPrompt: string;
+  } | null>(null);
   // Slash-menu state — opens when the prompt has an active `/word`
   // token at the cursor in Automate mode. The selected index is
   // owned here so keyboard navigation (↑/↓/Enter/Escape) intercepted
@@ -761,11 +768,17 @@ export function App() {
 
   // Object-URL hygiene: revoke each preview URL when the chip is removed
   // and on unmount, so we don't leak browser memory across many uploads.
+  // Use a ref mirror so the unmount cleanup sees the LATEST list — the
+  // prior closure captured the initial empty array and never revoked
+  // anything actually present at unmount time.
+  const attachmentsRef = useRef<StagedAttachment[]>([]);
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
   useEffect(() => {
     return () => {
-      for (const a of attachments) URL.revokeObjectURL(a.previewUrl);
+      for (const a of attachmentsRef.current) URL.revokeObjectURL(a.previewUrl);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const pickImages = useCallback(async () => {
@@ -944,6 +957,16 @@ export function App() {
   const streamBufferRef = useRef('');
   const streamDirtyRef = useRef(false);
   const streamRafRef = useRef<number | null>(null);
+  // 10 MB cap so a runaway response (or an infinite-loop provider bug)
+  // can't OOM the renderer. When exceeded, keep the tail (the answer is
+  // usually at the end) and flag truncated so downstream extractors can
+  // surface a warning if needed.
+  const STREAM_BUFFER_MAX_BYTES = 10 * 1024 * 1024;
+  const streamTruncatedRef = useRef(false);
+  // Set true synchronously by cancel(): any in-flight onChunk callback
+  // that wakes after cancel must no-op so post-cancel residue can't
+  // appear in the buffer of a subsequent submit.
+  const streamCancelledRef = useRef(false);
 
   const flushStreamBuffer = useCallback(() => {
     streamRafRef.current = null;
@@ -959,6 +982,8 @@ export function App() {
     }
     streamBufferRef.current = '';
     streamDirtyRef.current = false;
+    streamTruncatedRef.current = false;
+    streamCancelledRef.current = false;
     setStreamBuffer('');
   }, []);
 
@@ -1042,7 +1067,24 @@ export function App() {
   // We clear the buffer each submit so it only contains the current response.
   useEffect(() => {
     return window.optix.provider.onChunk((delta) => {
+      // Drop any chunks that arrive after a cancel — without this, a
+      // provider chunk in-flight at cancel time would land in the buffer
+      // and bleed into the next submit's UI.
+      if (streamCancelledRef.current) return;
       streamBufferRef.current += delta;
+      // Cap enforcement — runaway responses must not OOM the renderer.
+      // Keep the tail (final answer is usually there) and flag truncated.
+      if (streamBufferRef.current.length > STREAM_BUFFER_MAX_BYTES) {
+        if (!streamTruncatedRef.current) {
+          console.warn(
+            `[optix-widget] stream buffer exceeded ${STREAM_BUFFER_MAX_BYTES} bytes; truncating to tail`,
+          );
+          streamTruncatedRef.current = true;
+        }
+        streamBufferRef.current = streamBufferRef.current.slice(
+          streamBufferRef.current.length - STREAM_BUFFER_MAX_BYTES,
+        );
+      }
       streamDirtyRef.current = true;
       if (streamRafRef.current === null) {
         streamRafRef.current = requestAnimationFrame(flushStreamBuffer);
@@ -1081,8 +1123,27 @@ export function App() {
   // option-A continuity only applies inside a conversation. Without this,
   // the main-side loop state would leak until the next single-shot
   // submit (which also clears it, but only if the user submits).
+  // Also: if a turn is mid-flight at toggle time, the auto-finalize
+  // effect below is gated on conversationMode being ON, so it would
+  // never fire and the active card would orphan. Finalize it here.
   useEffect(() => {
     if (settings?.conversationMode) return;
+    // Orphan-active-turn rescue — if the user toggled OFF mid-loop or
+    // mid-stream, snapshot whatever terminal-ish state we have so the
+    // active card gets folded into history (or cleared) instead of
+    // hanging forever.
+    if (activeTurnPrompt !== null) {
+      if (status.kind === 'done' || status.kind === 'loop-done' || status.kind === 'error') {
+        finalizeActiveTurn(status);
+      } else {
+        // Non-terminal mid-flight: we can't snapshot a useful response,
+        // so just drop the active card UI. The loop teardown below
+        // covers the main-side state.
+        setActiveTurnPrompt(null);
+        setActiveTurnAttachmentNames([]);
+        setActiveTurnMode(null);
+      }
+    }
     if (!liveLoopIdRef.current) return;
     const stale = liveLoopIdRef.current;
     liveLoopIdRef.current = null;
@@ -1092,6 +1153,7 @@ export function App() {
     void window.optix.computer.end(stale, 'abandoned').catch(() => {
       /* ignore */
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings?.conversationMode]);
 
   // L6 — Provider-switch-mid-loop guard. Once a loop is running, its
@@ -1103,6 +1165,10 @@ export function App() {
   // restart. The check is gated on an actively-running loop
   // (`loopAbortRef.current.loopId` non-null) to avoid firing during
   // ordinary settings churn.
+  // Idempotent abort guard — re-entry from a settings churn or rapid
+  // double-switch would otherwise call computer.abort twice on the
+  // same id, racing the main-side teardown.
+  const abortInProgressRef = useRef(false);
   useEffect(() => {
     const newProvider = settings?.activeProviderId;
     if (!newProvider) return;
@@ -1110,12 +1176,19 @@ export function App() {
     const runningId = loopAbortRef.current.loopId;
     if (!startProvider || !runningId) return;
     if (newProvider === startProvider) return;
+    if (abortInProgressRef.current) return;
+    abortInProgressRef.current = true;
     // Mismatch — tear the loop down. Set the abort flag first so the
     // post-IPC checks (L2) bail before any further state touches.
     loopAbortRef.current.aborted = true;
-    void window.optix.computer.abort(runningId).catch(() => {
-      /* ignore */
-    });
+    void window.optix.computer
+      .abort(runningId)
+      .catch(() => {
+        /* ignore */
+      })
+      .finally(() => {
+        abortInProgressRef.current = false;
+      });
     if (liveLoopIdRef.current === runningId) liveLoopIdRef.current = null;
     loopStartProviderRef.current = null;
     setStatus({
@@ -1212,6 +1285,16 @@ export function App() {
   const pendingApprovalRef = useRef<
     ((decision: PerActionDecision) => void) | null
   >(null);
+  // Re-entry guard for approval click handlers — rapid double-clicks on
+  // Approve/Deny would otherwise resolve the pending promise twice (and
+  // approveLoop would launch two parallel runLoops). Set true at the top
+  // of each handler, cleared in finally / after resolver fires.
+  const pendingApprovalInFlightRef = useRef(false);
+  // 10-min auto-reject timer for per-action approvals — if the user
+  // walks away mid-loop the gate would otherwise hang the adapter
+  // forever. Set when the gate opens; cleared when the user resolves.
+  const pendingApprovalTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const PENDING_APPROVAL_TIMEOUT_MS = 10 * 60 * 1000;
   // When the agent calls the ask_user meta tool, runLoop sets this ref
   // before awaiting and the ChoicePrompt UI calls it on the user's pick.
   // The resolved string becomes the tool_result text on the next turn.
@@ -1597,7 +1680,23 @@ export function App() {
             // eslint-disable-next-line no-await-in-loop
             const decision = await new Promise<PerActionDecision>((resolve) => {
               pendingApprovalRef.current = resolve;
+              // 10-min auto-reject — if the user walks away the gate
+              // would otherwise hang the adapter forever. Auto-deny so
+              // the loop can either advance with feedback or end cleanly.
+              if (pendingApprovalTimeoutRef.current) {
+                clearTimeout(pendingApprovalTimeoutRef.current);
+              }
+              pendingApprovalTimeoutRef.current = setTimeout(() => {
+                pendingApprovalTimeoutRef.current = null;
+                const r = pendingApprovalRef.current;
+                pendingApprovalRef.current = null;
+                r?.({ kind: 'feedback', text: 'approval expired' });
+              }, PENDING_APPROVAL_TIMEOUT_MS);
             });
+            if (pendingApprovalTimeoutRef.current) {
+              clearTimeout(pendingApprovalTimeoutRef.current);
+              pendingApprovalTimeoutRef.current = null;
+            }
             pendingApprovalRef.current = null;
 
             if (decision.kind === 'abort') {
@@ -2210,6 +2309,8 @@ export function App() {
       //    `buildReplayPrompt`.
       const legacyReplay = replayingRoutineRef.current;
       replayingRoutineRef.current = null;
+      // Clear the badge — submit() consumed the legacy replay context.
+      if (legacyReplay) setLegacyReplayBadge(null);
       // Capture the user's RAW input before any token expansion or
       // hint-block augmentation. This is what we persist as the
       // `originalPrompt` if recording is on — recording the augmented
@@ -2357,6 +2458,17 @@ export function App() {
       // the bytes so finalizeActiveTurn can grab everything in one
       // place. Provider/model come from the active settings — same
       // pair the IPC handler used.
+      // Privacy-toggle race — if the user flipped privacy ON during
+      // the IPC roundtrip, the response is now stale relative to their
+      // intent. Drop it without committing to history; the active card
+      // is cleared so the user sees a clean slate.
+      if (settingsRef.current?.privacyPaused) {
+        setStatus({ kind: 'idle' });
+        setActiveTurnPrompt(null);
+        setActiveTurnAttachmentNames([]);
+        setActiveTurnMode(null);
+        return;
+      }
       if (activeTurnPersistRef.current) {
         activeTurnPersistRef.current.usage = usage;
         activeTurnPersistRef.current.providerId = settings?.activeProviderId;
@@ -2401,6 +2513,10 @@ export function App() {
 
   const approveLoop = useCallback(async () => {
     if (status.kind !== 'awaiting-approval') return;
+    // Re-entry guard — a double-click on Approve must not launch two
+    // parallel runLoops (each would mint its own loop id + race state).
+    if (pendingApprovalInFlightRef.current) return;
+    pendingApprovalInFlightRef.current = true;
     const { prompt: p, imageBytes, imageMimeType, imageWidth, imageHeight, imageAttachments } = status;
     const mode = settings?.agentApprovalMode ?? 'per-task';
     setStatus({
@@ -2416,20 +2532,42 @@ export function App() {
       await runLoop(p, imageBytes, imageMimeType, imageWidth, imageHeight, mode, imageAttachments, continueId);
     } finally {
       setBusySince(null);
+      pendingApprovalInFlightRef.current = false;
     }
   }, [status, runLoop, settings?.agentApprovalMode]);
 
+  // Helper: resolve the per-action approval ref exactly once and clear
+  // the timeout + in-flight guard so the next gate can open cleanly.
+  const resolvePendingApproval = useCallback(
+    (decision: PerActionDecision) => {
+      if (pendingApprovalInFlightRef.current) return;
+      pendingApprovalInFlightRef.current = true;
+      try {
+        if (pendingApprovalTimeoutRef.current) {
+          clearTimeout(pendingApprovalTimeoutRef.current);
+          pendingApprovalTimeoutRef.current = null;
+        }
+        const resolver = pendingApprovalRef.current;
+        pendingApprovalRef.current = null;
+        resolver?.(decision);
+      } finally {
+        pendingApprovalInFlightRef.current = false;
+      }
+    },
+    [],
+  );
+
   const approvePendingAction = useCallback(() => {
-    pendingApprovalRef.current?.({ kind: 'approve' });
-  }, []);
+    resolvePendingApproval({ kind: 'approve' });
+  }, [resolvePendingApproval]);
   const denyPendingAction = useCallback(() => {
-    pendingApprovalRef.current?.({ kind: 'deny' });
-  }, []);
+    resolvePendingApproval({ kind: 'deny' });
+  }, [resolvePendingApproval]);
   const sendFeedbackForPendingAction = useCallback((text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
-    pendingApprovalRef.current?.({ kind: 'feedback', text: trimmed });
-  }, []);
+    resolvePendingApproval({ kind: 'feedback', text: trimmed });
+  }, [resolvePendingApproval]);
 
   // Resolves the pending ask_user choice. Called by ChoicePrompt's
   // onSubmit when the user picks an option (or types freeform text).
@@ -2453,11 +2591,17 @@ export function App() {
         );
       } else {
         // Legacy fallback — stage the routine directly via the
-        // replay ref since it has no token form yet.
+        // replay ref since it has no token form yet. Surface a badge
+        // so the user knows the prompt was overwritten with the saved
+        // routine's original prompt and isn't typing a fresh task.
         void window.optix.routines.read(summary.id).then((r) => {
           if (r) {
             replayingRoutineRef.current = r;
             setPrompt(r.originalPrompt);
+            setLegacyReplayBadge({
+              oaNumber: r.oaNumber,
+              originalPrompt: r.originalPrompt,
+            });
           }
         });
       }
@@ -2505,7 +2649,13 @@ export function App() {
     // If the loop is paused on a per-action approval, resolve the pending
     // promise with 'abort' so runLoop can short-circuit cleanly.
     if (pendingApprovalRef.current) {
-      pendingApprovalRef.current({ kind: 'abort' });
+      if (pendingApprovalTimeoutRef.current) {
+        clearTimeout(pendingApprovalTimeoutRef.current);
+        pendingApprovalTimeoutRef.current = null;
+      }
+      const r = pendingApprovalRef.current;
+      pendingApprovalRef.current = null;
+      r({ kind: 'abort' });
       return;
     }
     // Same idea for choice / plan gates — these resolver shapes don't
@@ -2531,6 +2681,13 @@ export function App() {
     loopPauseRef.current.resolveResume?.();
     loopPauseRef.current.resolveResume = null;
     setIsPaused(false);
+    // Synchronously mark the buffer cancelled + clear it BEFORE the
+    // async cancel/abort propagates — any provider chunk already in
+    // flight will no-op when its callback fires, and the buffer can't
+    // bleed into the next submit's UI.
+    streamCancelledRef.current = true;
+    streamBufferRef.current = '';
+    streamDirtyRef.current = false;
     // Abort whichever flow is active.
     if (loopAbortRef.current.loopId) {
       const id = loopAbortRef.current.loopId;
@@ -2576,6 +2733,10 @@ export function App() {
     if (loopAbortRef.current.loopId) {
       loopAbortRef.current.aborted = true;
     }
+    if (pendingApprovalTimeoutRef.current) {
+      clearTimeout(pendingApprovalTimeoutRef.current);
+      pendingApprovalTimeoutRef.current = null;
+    }
     pendingApprovalRef.current?.({ kind: 'abort' });
     pendingApprovalRef.current = null;
     pendingChoiceRef.current?.('');
@@ -2593,6 +2754,11 @@ export function App() {
     loopPauseRef.current.resolveResume = null;
     setIsPaused(false);
 
+    // Synchronously kill the stream buffer so post-cancel chunks no-op
+    // and the next submit starts from a clean buffer (mirrors stop()).
+    streamCancelledRef.current = true;
+    streamBufferRef.current = '';
+    streamDirtyRef.current = false;
     // Abort whichever flow is active. Best-effort — failures are
     // non-fatal and we still clear UI state below.
     if (loopAbortRef.current.loopId) {
@@ -3057,6 +3223,32 @@ export function App() {
             />
           );
         })()}
+        {/* Legacy-replay banner — flags the user that the prompt
+            was overwritten by a saved routine's original prompt
+            (set via slash-menu pick on a pre-migration routine).
+            TODO(cross-file): add `.widget__legacy-replay-badge` +
+            `.widget__legacy-replay-badge__dismiss` rules in
+            src/renderer/widget/styles.css so this isn't unstyled. */}
+        {legacyReplayBadge && (
+          <div className="widget__legacy-replay-badge" role="status">
+            Replaying routine
+            {typeof legacyReplayBadge.oaNumber === 'number'
+              ? ` OA-${legacyReplayBadge.oaNumber}`
+              : ''}
+            : original prompt
+            <button
+              type="button"
+              className="widget__legacy-replay-badge__dismiss"
+              onClick={() => {
+                replayingRoutineRef.current = null;
+                setLegacyReplayBadge(null);
+              }}
+              aria-label="Dismiss replay"
+            >
+              ×
+            </button>
+          </div>
+        )}
         <AttachmentTray attachments={attachments} onRemove={removeAttachment} />
         {/* Prompt input is enabled during `looping` so the user can type a
             mid-loop interrupt; submit() routes it into the queue. All other

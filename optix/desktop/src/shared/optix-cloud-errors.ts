@@ -1,4 +1,15 @@
-// Shared encoding for Optix Cloud billing errors.
+// Shared encoding for Optix Cloud billing/relay errors.
+//
+// Contract — read before changing:
+//   - Adding a new code is SAFE. Consumers (provider, IPC handler,
+//     renderer) gracefully fall back to a generic message when they
+//     don't recognise a code.
+//   - Renaming or REMOVING a code is BREAKING — old encoded errors
+//     persist in chat history / pending IPC frames, so removed codes
+//     re-appear at runtime. Treat the enum as append-only.
+//   - `decodeOptixCloudBillingError` must NEVER throw on malformed
+//     input — it returns null and lets callers fall back to plain
+//     error rendering.
 //
 // When the relay returns 402 (subscription_inactive / subscription_incomplete)
 // or 429 (monthly_allowance_exceeded), the desktop client wants to render a
@@ -16,12 +27,26 @@
 
 import type { Tier } from './schemas';
 
-/** Distinct billing-related failure modes the relay can return. */
+/** Distinct billing/relay failure modes the relay can return. Append-only.
+ *  - subscription_inactive: 402 — never subscribed, canceled, or past_due past grace
+ *  - subscription_incomplete: 402 — active but missing tokenAllowance (rare)
+ *  - monthly_allowance_exceeded: 429 — burned through monthly cap
+ *  - no_user_record: 403 — Firestore profile missing (webhook delay)
+ *  - invalid_auth: 401 — Firebase ID token invalid/expired
+ *  - rate_limited: 429 (non-billing) — relay-level throttle
+ *  - model_not_available: 404/400 — selected model rejected upstream
+ *  - invalid_request: 400 — payload rejected (e.g. context too large)
+ *  - relay_unavailable: 502/503/504 — relay or upstream down */
 export type OptixCloudBillingCode =
-  | 'subscription_inactive' // 402 — never subscribed, canceled, or past_due past grace
-  | 'subscription_incomplete' // 402 — active but missing tokenAllowance (rare)
-  | 'monthly_allowance_exceeded' // 429 — burned through monthly cap
-  | 'no_user_record'; // 403 — Firestore profile missing (webhook delay)
+  | 'subscription_inactive'
+  | 'subscription_incomplete'
+  | 'monthly_allowance_exceeded'
+  | 'no_user_record'
+  | 'invalid_auth'
+  | 'rate_limited'
+  | 'model_not_available'
+  | 'invalid_request'
+  | 'relay_unavailable';
 
 export type OptixCloudBillingError = {
   /** HTTP status from the relay. */
@@ -53,10 +78,12 @@ export function encodeOptixCloudBillingError(
 }
 
 /** Try to pull a billing error out of an Error.message. Returns null
- *  for non-billing errors so callers can fall back to plain rendering. */
+ *  for non-billing errors so callers can fall back to plain rendering.
+ *  Never throws — malformed input yields null. */
 export function decodeOptixCloudBillingError(
   message: string,
 ): OptixCloudBillingError | null {
+  if (typeof message !== 'string') return null;
   if (!message.startsWith(PREFIX)) return null;
   // Find the closing brace + colon that terminates the JSON segment.
   // Pull the JSON slice and parse it. If anything's malformed treat
@@ -68,6 +95,8 @@ export function decodeOptixCloudBillingError(
   try {
     const parsed = JSON.parse(jsonSlice) as Partial<OptixCloudBillingError>;
     if (
+      parsed &&
+      typeof parsed === 'object' &&
       typeof parsed.status === 'number' &&
       typeof parsed.code === 'string' &&
       isKnownCode(parsed.code)
@@ -99,11 +128,42 @@ export function stripBillingPrefix(message: string): string {
   return message.slice(jsonEnd + 2);
 }
 
+/** Map a structured code to user-facing copy. Consumers can wrap or
+ *  override per-surface, but having a shared default keeps toast
+ *  language consistent across renderer + main. */
+export function humanReadableForCode(code: OptixCloudBillingCode): string {
+  switch (code) {
+    case 'subscription_inactive':
+      return 'Optix Cloud subscription is not active. Open Settings to subscribe or update your plan.';
+    case 'subscription_incomplete':
+      return 'Optix Cloud subscription is missing a token allowance. Try again in a moment, or contact support if the issue persists.';
+    case 'monthly_allowance_exceeded':
+      return 'Optix Cloud monthly token allowance is exhausted. Upgrade to Pro or wait until your next renewal.';
+    case 'no_user_record':
+      return 'Optix Cloud profile not found yet. Try again in a few seconds — the account is being set up.';
+    case 'invalid_auth':
+      return 'Your sign-in session expired. Please sign in again.';
+    case 'rate_limited':
+      return 'Too many requests. Wait a moment and try again.';
+    case 'model_not_available':
+      return "The selected model isn't available right now. Try a different model.";
+    case 'invalid_request':
+      return 'The request was rejected by the relay. Try a shorter prompt.';
+    case 'relay_unavailable':
+      return 'Optix Cloud is temporarily unavailable. Please try again shortly.';
+  }
+}
+
 function isKnownCode(code: string): code is OptixCloudBillingCode {
   return (
     code === 'subscription_inactive' ||
     code === 'subscription_incomplete' ||
     code === 'monthly_allowance_exceeded' ||
-    code === 'no_user_record'
+    code === 'no_user_record' ||
+    code === 'invalid_auth' ||
+    code === 'rate_limited' ||
+    code === 'model_not_available' ||
+    code === 'invalid_request' ||
+    code === 'relay_unavailable'
   );
 }
