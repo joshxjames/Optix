@@ -766,8 +766,8 @@ section { padding: var(--section-pad) 0; position: relative; }
    card 3 around 65%. Cards then hold visible until ~95% before fading
    out cleanly so the next loop starts from a clean slate. */
 @keyframes feature-card-1 {
-  0%, 22%   { opacity: 0; transform: translateY(6px); }
-  28%, 92%  { opacity: 1; transform: translateY(0); }
+  0%, 28%   { opacity: 0; transform: translateY(6px); }
+  34%, 92%  { opacity: 1; transform: translateY(0); }
   100%      { opacity: 0; transform: translateY(6px); }
 }
 @keyframes feature-card-2 {
@@ -776,8 +776,8 @@ section { padding: var(--section-pad) 0; position: relative; }
   100%      { opacity: 0; transform: translateY(6px); }
 }
 @keyframes feature-card-3 {
-  0%, 62%   { opacity: 0; transform: translateY(6px); }
-  68%, 92%  { opacity: 1; transform: translateY(0); }
+  0%, 56%   { opacity: 0; transform: translateY(6px); }
+  62%, 92%  { opacity: 1; transform: translateY(0); }
   100%      { opacity: 0; transform: translateY(6px); }
 }
 
