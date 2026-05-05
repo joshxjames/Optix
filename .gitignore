@@ -11,6 +11,7 @@ _reference
 
 # Local-only assistant memory + state. Not part of the public project.
 .claude/
+.notes/
 
 # Tesseract OCR data file — large binary, downloaded as a build dep.
 # Kept out so the repo stays small; consumers fetch it on first install
