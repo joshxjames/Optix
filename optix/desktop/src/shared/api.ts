@@ -544,4 +544,9 @@ declare global {
   interface Window {
     optix: OptixApi;
   }
+  /** Build-time-injected app version (from `optix/desktop/package.json`).
+   *  Defined via electron-vite's `define` config; renderer-only. The
+   *  support form uses this in the diagnostics block so we don't have
+   *  to hand-maintain a const that drifts on every release. */
+  const __APP_VERSION__: string;
 }

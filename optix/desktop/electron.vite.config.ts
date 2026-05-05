@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 
@@ -9,6 +10,21 @@ import react from '@vitejs/plugin-react';
 // sidestep the problem. Harmless if the project is already outside a sync
 // folder.
 const VITE_CACHE_DIR = resolve(tmpdir(), 'optix-vite-cache');
+
+// Inject the app version from package.json at build time so the support
+// form (and any other consumer) doesn't have to keep a hand-maintained
+// `APP_VERSION` const in sync. Read once at config-load — Vite re-runs
+// the config when it changes, which catches a `pnpm version` bump.
+const PKG_VERSION: string = (() => {
+  try {
+    const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as {
+      version?: string;
+    };
+    return typeof pkg.version === 'string' ? pkg.version : '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+})();
 
 export default defineConfig({
   main: {
@@ -70,6 +86,11 @@ export default defineConfig({
         '@shared': resolve('src/shared'),
         '@renderer': resolve('src/renderer'),
       },
+    },
+    // Inject __APP_VERSION__ at build time. JSON.stringify so it lands as a
+    // proper string literal (not an unquoted identifier) in the bundle.
+    define: {
+      __APP_VERSION__: JSON.stringify(PKG_VERSION),
     },
     root: 'src/renderer',
     build: {

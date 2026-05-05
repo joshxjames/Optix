@@ -4,11 +4,10 @@ import { useState } from 'react';
 // (e.g. moving to a dedicated support@ address later) is a one-line edit.
 const SUPPORT_EMAIL = 'admin@covetable.com.au';
 
-// App version — kept as a const so the support email always carries it.
-// TODO(build): wire this from package.json via electron-vite's `define` so
-// we don't have to bump it manually on each release. For now it's accurate
-// at every commit because we only ship from main.
-const APP_VERSION = '0.1.0';
+// App version — injected at build time from `optix/desktop/package.json`
+// via electron-vite's `define` config (see `electron.vite.config.ts`).
+// Always accurate after every release without a hand-maintained const.
+const APP_VERSION: string = __APP_VERSION__;
 
 type Category =
   | 'Bug report'
