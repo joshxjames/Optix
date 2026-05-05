@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc';
-import type { CaptureResult, OptixApi, OverlayRenderPayload } from '../shared/api';
+import type { CaptureResult, OptixApi, OverlayRenderPayload, UpdateDownloadedInfo } from '../shared/api';
 import { StoredPlanSchema, type StoredPlan } from '../shared/schemas';
 
 // The whitelisted surface exposed to both renderers. Renderer code NEVER
@@ -293,6 +293,19 @@ const api: OptixApi = {
       ipcRenderer.on(IPC.plan.changed, listener);
       return () => ipcRenderer.removeListener(IPC.plan.changed, listener);
     },
+  },
+  updater: {
+    onDownloaded: (cb) => {
+      const listener = (_: unknown, info: UpdateDownloadedInfo) => cb(info);
+      ipcRenderer.on(IPC.updater.downloaded, listener);
+      return () => ipcRenderer.removeListener(IPC.updater.downloaded, listener);
+    },
+    onProgress: (cb) => {
+      const listener = (_: unknown, info: { percent: number }) => cb(info);
+      ipcRenderer.on(IPC.updater.progress, listener);
+      return () => ipcRenderer.removeListener(IPC.updater.progress, listener);
+    },
+    installNow: () => ipcRenderer.invoke(IPC.updater.installNow),
   },
   routines: {
     list: () => ipcRenderer.invoke(IPC.routines.list),

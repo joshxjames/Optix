@@ -20,6 +20,7 @@
     "@google/generative-ai": "^0.21.0",
     "@hurdlegroup/robotjs": "^0.12.3",
     "electron-store": "^10.0.0",
+    "electron-updater": "^6.8.3",
     "firebase": "^12.12.1",
     "keytar": "^7.9.0",
     "openai": "^4.73.1",

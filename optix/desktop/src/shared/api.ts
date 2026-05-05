@@ -419,7 +419,36 @@ export interface OptixApi {
      *  graceful fallback when the relay submission fails. */
     openMailto: (req: { to: string; subject: string; body: string }) => Promise<void>;
   };
+  updater: {
+    /** Subscribe to the "update is downloaded and ready to install"
+     *  event. Fires after electron-updater has pulled a new version's
+     *  bytes into its cache directory. The callback gets the version
+     *  string (e.g. "0.2.0") and optional release notes. Returns an
+     *  unsubscribe function. */
+    onDownloaded: (cb: (info: UpdateDownloadedInfo) => void) => () => void;
+    /** Subscribe to download-progress events fired while a fresh
+     *  update is being pulled. Useful for showing a progress bar in
+     *  the banner while the user waits. Returns an unsubscribe. */
+    onProgress: (cb: (info: { percent: number }) => void) => () => void;
+    /** Trigger the "restart and install" flow. Quits all windows,
+     *  unpacks the staged update, relaunches the app on the new
+     *  version. Effectively a one-way call — the renderer will be
+     *  gone before this promise could resolve. */
+    installNow: () => Promise<void>;
+  };
 }
+
+/** Payload carried on the `updater:downloaded` channel — what the
+ *  renderer banner needs to show "Optix vX.Y.Z is ready". The
+ *  `| undefined` on the optional fields is required for our
+ *  `exactOptionalPropertyTypes: true` setting — without it, an object
+ *  literal with `releaseNotes: undefined` doesn't satisfy
+ *  `releaseNotes?: string` even though intuitively it should. */
+export type UpdateDownloadedInfo = {
+  version: string;
+  releaseNotes?: string | undefined;
+  releaseDate?: string | undefined;
+};
 
 // Round 9.2: explicit undefined for exactOptionalPropertyTypes
 export type ChatHistoryAppendTurnRequest = {

@@ -220,4 +220,20 @@ export const IPC = {
     //   for "open in email client").
     openMailto: 'feedback:openMailto',
   },
+  updater: {
+    // main → renderer: a downloaded update is ready to install. Payload
+    //   carries the version string + release notes so the banner can
+    //   show "Optix vX.Y.Z is ready". Fired exactly once per session
+    //   (electron-updater dedupes redundant download events).
+    downloaded: 'updater:downloaded',
+    // main → renderer: download progress while a fresh update is being
+    //   pulled in the background. Payload: { percent: 0..100 }. Optional
+    //   on the renderer side — banner only renders on `downloaded`.
+    progress: 'updater:progress',
+    // renderer → main: user clicked "Restart now". Main calls
+    //   autoUpdater.quitAndInstall() which closes all windows + relaunches
+    //   the app on the new version. There's no return value; the app
+    //   will be gone before the promise could resolve.
+    installNow: 'updater:installNow',
+  },
 } as const;

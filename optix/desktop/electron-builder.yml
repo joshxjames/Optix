@@ -67,7 +67,17 @@ mac:
   # entitlementsInherit: resources/entitlements.mac.plist
 
 win:
-  target: portable
+  # NSIS — required for auto-update on Windows. The previous `portable`
+  # target shipped a single self-contained .exe that runs from anywhere,
+  # but electron-updater can't replace a running portable executable.
+  # NSIS gives the user a real install (writes to %LOCALAPPDATA%\Optix
+  # by default; per-user, no admin elevation), and the installer is
+  # what auto-update replaces in place.
+  #
+  # If a no-install distribution becomes important again, add a
+  # secondary `portable` target alongside this one — but auto-update
+  # only fires for the NSIS channel.
+  target: nsis
   artifactName: ${productName}-${version}.${ext}
   # TODO (Phase E — Authenticode signing): wire signtool once a code
   # signing certificate is procured. Required CI secrets / env vars:
@@ -84,15 +94,31 @@ win:
   # Leaving certificateFile unset for now so unsigned dev builds work.
   # certificateFile: null
 
-# TODO (Phase E — auto-update): integrate electron-updater. Set up an
-# update feed (GitHub Releases is the common choice) and replace this
-# block with the appropriate `publish:` provider config, e.g.:
-#   publish:
-#     provider: github
-#     owner: <gh-org>
-#     repo:  optix
-# After that, wire `autoUpdater` from `electron-updater` in main/index.ts
-# (checkForUpdatesAndNotify on app ready, with quitAndInstall on the
-# `update-downloaded` event). `publish: null` disables publishing for
-# now so local + CI builds don't try to upload artifacts.
-publish: null
+# Auto-update feed.
+#
+# `provider: generic` + `url: <Firebase Hosting URL>` tells electron-
+# builder to write a `latest.yml` (Win) / `latest-mac.yml` (Mac) into
+# the build output, AND to bake the same URL into the bundled
+# `app-update.yml` so the autoUpdater runtime knows where to look.
+#
+# Releasing flow once certs are wired up:
+#   1. Bump `version` in package.json
+#   2. `pnpm package:win` (or :mac) — produces a signed .exe + the
+#      latest.yml manifest in optix/desktop/dist/
+#   3. `firebase deploy --only hosting:updates` from optix-cloud/
+#      uploads everything under that to the updates Firebase Hosting
+#      site (configured separately from the marketing site)
+#   4. Existing installed copies pick it up on their next 4-hour
+#      check, download in the background, show the in-app banner
+#
+# The URL below is the placeholder until the multi-site Firebase
+# Hosting setup lands. See `docs/AUTOUPDATE.md` for the full release
+# checklist + cert procurement notes.
+publish:
+  provider: generic
+  url: https://optix-22473.web.app/updates/
+  # Don't trust signature verification yet — until production builds
+  # are signed (Authenticode + Apple Developer ID, Phase E), turning
+  # this off lets dev/test builds auto-update across iterations. Flip
+  # to `true` (or remove — it's the default) once signing is wired up.
+  publishAutoUpdate: true

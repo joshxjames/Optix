@@ -1,0 +1,20 @@
+# Dev-mode auto-update config. electron-updater normally refuses to
+# run in unpackaged dev builds because there's nothing to "update from"
+# (you're running source, not a signed installer). Setting
+# `forceDevUpdateConfig = true` in main/updater.ts bypasses that
+# refusal IF this file exists alongside package.json — providing it
+# the feed URL it would otherwise read from the bundled app-update.yml.
+#
+# This file ships with a placeholder URL that points at production.
+# That's harmless: in dev, you can leave it pointing at production and
+# nothing happens (no new version, no banner). To exercise the full
+# update flow locally:
+#   1. Run a local static server: `npx serve -p 8000` in a directory
+#      that contains a `latest.yml` (and the .exe / .nupkg files) for
+#      a higher version than your dev package.json
+#   2. Replace the URL below with `http://localhost:8000/`
+#   3. Restart `pnpm dev` — within ~30s the renderer should fire the
+#      update banner
+provider: generic
+url: https://optix-22473.web.app/updates/
+publishAutoUpdate: true

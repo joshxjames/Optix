@@ -50,6 +50,7 @@ import { SlashMenu } from './components/SlashMenu';
 import { AttachmentTray, type StagedAttachment } from './components/AttachmentTray';
 import { UserBubble } from './components/UserBubble';
 import { UpgradePrompt } from './components/UpgradePrompt';
+import { UpdateBanner } from './components/UpdateBanner';
 import {
   getFreshIdToken,
   onUserProfileChanged,
@@ -3423,6 +3424,12 @@ export function App() {
 
   return (
     <div className={`widget${isCompact ? ' widget--compact' : ''}`}>
+      {/* Auto-update banner — renders nothing until a fresh version
+          is downloaded in the background. Sits above the header so
+          it's the first thing the user sees, but below absolute-
+          positioned overlays so it never blocks active interactions. */}
+      <UpdateBanner />
+
       {headerNode}
 
       {controlsNode}

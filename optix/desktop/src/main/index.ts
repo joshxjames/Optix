@@ -36,6 +36,8 @@ import { registerCaptureIpc } from '@main/ipc/capture.ipc';
 import { registerAuthIpc } from '@main/ipc/auth.ipc';
 import { registerStripeIpc } from '@main/ipc/stripe.ipc';
 import { registerFeedbackIpc } from '@main/ipc/feedback.ipc';
+import { registerUpdaterIpc } from '@main/ipc/updater.ipc';
+import { initAutoUpdater } from '@main/updater';
 import { stopLoopbackServer } from '@main/auth/loopback-server';
 import { registerHotkeys, unregisterHotkeys } from '@main/hotkeys/register';
 import { getSettings, setSettings } from '@main/storage/settings-store';
@@ -123,6 +125,12 @@ app.whenReady().then(() => {
   registerAuthIpc();
   registerStripeIpc();
   registerFeedbackIpc();
+  registerUpdaterIpc();
+
+  // Auto-update — runs in the background, only surfaces to the user
+  // when an update is downloaded and ready to install. See
+  // `main/updater.ts` for the cadence + Firebase Hosting feed config.
+  initAutoUpdater();
 
   // Intercept navigator.mediaDevices.getDisplayMedia calls from any renderer.
   // We auto-select the primary display source — no system picker, no prompt.
