@@ -706,12 +706,154 @@ section { padding: var(--section-pad) 0; position: relative; }
   height: 60px;
   background: linear-gradient(to bottom, transparent, rgba(34, 227, 255, 0.18), transparent);
   animation: scan 3s ease-in-out infinite;
+  /* Keep the scan-line above the feature cards so it visually
+     "passes over" them rather than under. */
+  z-index: 2;
 }
 @keyframes scan {
   0%   { top: -60px; opacity: 0; }
   20%  { opacity: 1; }
   80%  { opacity: 1; }
   100% { top: 100%; opacity: 0; }
+}
+
+/* ----- Feature cards revealed by the scan line ------------------------- */
+
+/* Container — left half of the scene, top-anchored below the frame-bar
+   overlap zone. Width caps so the cards don't intrude on the floating
+   widget mock at the bottom-right of the frame. */
+.how__feature-cards {
+  position: absolute;
+  top: 22%;
+  left: 8%;
+  width: 56%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.how__feature-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(34, 227, 255, 0.15);
+  border-radius: 6px;
+  height: 42px;
+  /* Reveal happens via keyframes synced to the 3s scan cycle. Each
+     card has its own keyframes so opacity flips at the moment the
+     scan-line reaches its vertical position — no JS needed. */
+  opacity: 0;
+  transform: translateY(6px);
+  animation-duration: 3s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  box-sizing: border-box;
+}
+.how__feature-card:nth-child(1) { animation-name: feature-card-1; }
+.how__feature-card:nth-child(2) { animation-name: feature-card-2; }
+.how__feature-card:nth-child(3) { animation-name: feature-card-3; }
+
+/* Each card: invisible until the scan-line crosses its row, then
+   visible until the cycle resets. Percentages match the scan
+   keyframes — scan-line opacity is 0→1 by 20%, fully through the
+   scene by 100%, so card 1 reveals around 25%, card 2 around 45%,
+   card 3 around 65%. Cards then hold visible until ~95% before fading
+   out cleanly so the next loop starts from a clean slate. */
+@keyframes feature-card-1 {
+  0%, 22%   { opacity: 0; transform: translateY(6px); }
+  28%, 92%  { opacity: 1; transform: translateY(0); }
+  100%      { opacity: 0; transform: translateY(6px); }
+}
+@keyframes feature-card-2 {
+  0%, 42%   { opacity: 0; transform: translateY(6px); }
+  48%, 92%  { opacity: 1; transform: translateY(0); }
+  100%      { opacity: 0; transform: translateY(6px); }
+}
+@keyframes feature-card-3 {
+  0%, 62%   { opacity: 0; transform: translateY(6px); }
+  68%, 92%  { opacity: 1; transform: translateY(0); }
+  100%      { opacity: 0; transform: translateY(6px); }
+}
+
+.how__feature-card-icon {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, var(--accent), rgba(34, 227, 255, 0.3));
+  box-shadow: 0 0 10px -2px rgba(34, 227, 255, 0.5);
+}
+.how__feature-card-lines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.how__feature-card-line {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.18);
+  width: 100%;
+}
+.how__feature-card-line--short {
+  width: 60%;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* ----- Target reticle (corner brackets) -------------------------------- */
+
+/* Positioned over the middle card. Width/height picked to outset
+   the card by ~6px on every side so the brackets sit just outside
+   the card border — feels like an autofocus lock. The top value is
+   tuned to land on card 2: top 22% (cards container) + card 1
+   height 42px + gap 10px = +52px, then -6px outset. Done in CSS
+   custom properties so a designer can fine-tune in one place. */
+.how__target {
+  position: absolute;
+  top: calc(22% + 42px + 10px - 6px);
+  left: calc(8% - 6px);
+  width: calc(56% + 12px);
+  height: calc(42px + 12px);
+  pointer-events: none;
+  opacity: 0;
+  /* Reticle appears late in the cycle, after all 3 cards are revealed.
+     It scales down slightly during the lock-on, mimicking a camera
+     autofocus snapping to its target. */
+  animation: target-lock 3s ease-in-out infinite;
+  z-index: 3;
+}
+@keyframes target-lock {
+  0%, 70%  { opacity: 0; transform: scale(1.18); }
+  78%      { opacity: 1; transform: scale(1); }
+  92%      { opacity: 1; transform: scale(1); }
+  100%     { opacity: 0; transform: scale(0.94); }
+}
+.how__target span {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--accent);
+  filter: drop-shadow(0 0 4px rgba(34, 227, 255, 0.6));
+}
+/* Corner brackets — each span is an L-shape made by hiding two of
+   its four borders. */
+.how__target span:nth-child(1) {
+  top: 0; left: 0;
+  border-right: none; border-bottom: none;
+}
+.how__target span:nth-child(2) {
+  top: 0; right: 0;
+  border-left: none; border-bottom: none;
+}
+.how__target span:nth-child(3) {
+  bottom: 0; left: 0;
+  border-right: none; border-top: none;
+}
+.how__target span:nth-child(4) {
+  bottom: 0; right: 0;
+  border-left: none; border-top: none;
 }
 
 /* Scene 2 — Access: a cursor wandering with click rings. */

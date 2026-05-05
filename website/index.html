@@ -209,9 +209,45 @@
                   </div>
                 </div>
 
-                <!-- Scene 1 — Ask: scan line sweeps over a faint grid. -->
+                <!-- Scene 1 — Ask: scan-line sweeps top-to-bottom over a
+                     faint grid; as it passes each row, a "feature card"
+                     reveals (mirrors how Optix's Ask mode visually
+                     identifies UI elements on screen). After all three
+                     are revealed, a corner-bracket target locks onto
+                     the middle card just before the cycle resets. -->
                 <div class="how__scene how__scene--sees" aria-hidden="true">
                   <div class="how__scan-grid"></div>
+
+                  <div class="how__feature-cards">
+                    <div class="how__feature-card">
+                      <div class="how__feature-card-icon"></div>
+                      <div class="how__feature-card-lines">
+                        <div class="how__feature-card-line"></div>
+                        <div class="how__feature-card-line how__feature-card-line--short"></div>
+                      </div>
+                    </div>
+                    <div class="how__feature-card">
+                      <div class="how__feature-card-icon"></div>
+                      <div class="how__feature-card-lines">
+                        <div class="how__feature-card-line"></div>
+                        <div class="how__feature-card-line how__feature-card-line--short"></div>
+                      </div>
+                    </div>
+                    <div class="how__feature-card">
+                      <div class="how__feature-card-icon"></div>
+                      <div class="how__feature-card-lines">
+                        <div class="how__feature-card-line"></div>
+                        <div class="how__feature-card-line how__feature-card-line--short"></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Target reticle — 4 corner brackets that lock onto
+                       the middle card right after all 3 are revealed. -->
+                  <div class="how__target">
+                    <span></span><span></span><span></span><span></span>
+                  </div>
+
                   <div class="how__scan-line"></div>
                 </div>
 
