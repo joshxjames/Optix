@@ -3453,8 +3453,15 @@ export function App() {
           </button>
         )}
 
-        {/* Idle advisory — only when there's no active conversation. */}
-        {pastTurns.length === 0 &&
+        {/* Idle advisory — only when there's no active conversation.
+            `settings &&` guard is critical: settings is null on first
+            mount until the IPC `settings:get` resolves. Without the
+            guard, accessing `settings.activeProviderId` here throws
+            "Cannot read properties of undefined (reading 'settings')"
+            (caught by the ErrorBoundary as a render error) any time
+            the user lands on Access tab pre-IPC-hydration. */}
+        {settings &&
+          pastTurns.length === 0 &&
           activeTurnPrompt === null &&
           status.kind === 'idle' &&
           mode === 'action' &&
