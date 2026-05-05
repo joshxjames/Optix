@@ -1,0 +1,10 @@
+node_modules
+dist
+.vite
+*.log
+
+# Hero video — currently 154 MB, exceeds GitHub's 100 MB single-file limit.
+# Lives locally in /website/assets/hero.mp4 and is uploaded directly to
+# Firebase Hosting at deploy time. If we ever want to track it in git,
+# either compress first (target <5 MB for web) or set up Git LFS.
+assets/hero.mp4

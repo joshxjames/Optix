@@ -1,0 +1,19 @@
+{
+  "name": "optix-website",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Optix marketing site — static, Vite-built, deployed to Firebase Hosting.",
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "animejs": "^4.0.2"
+  },
+  "devDependencies": {
+    "vite": "^5.4.21"
+  }
+}
