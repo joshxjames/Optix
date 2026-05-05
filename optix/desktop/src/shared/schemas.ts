@@ -769,3 +769,57 @@ export const SettingsSchema = z.object({
   theme: z.enum(['dark', 'light']).default('dark'),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
+
+// ---------------------------------------------------------------------------
+// Support feedback submission. The renderer's "Getting help" form posts here;
+// main forwards to the Cloud Functions relay which mails admin@covetable.com.au
+// via Resend / SendGrid / similar transactional service. Auth token is
+// optional — Optix Cloud users get authenticated submissions (the relay can
+// link the message to their account); BYO-key users submit anonymously.
+// ---------------------------------------------------------------------------
+
+export const FeedbackCategorySchema = z.enum([
+  'Bug report',
+  'Feature request',
+  'Billing / Optix Cloud',
+  'Question',
+  'Other',
+]);
+export type FeedbackCategory = z.infer<typeof FeedbackCategorySchema>;
+
+export const FeedbackSubmissionSchema = z.object({
+  /** Optional sender name. Empty allowed; UI treats it as "anonymous". */
+  name: z.string().max(120).default(''),
+  /** Optional reply-to email. If absent, we can't write back — flagged in
+   *  the rendered email so the admin knows. */
+  email: z.string().email().max(320).optional().or(z.literal('')),
+  category: FeedbackCategorySchema,
+  /** Required. 1–140 chars; longer titles get truncated by mail clients
+   *  anyway. */
+  subject: z.string().min(1).max(140),
+  /** Required. 1–4000 chars. Bigger than that should go in an attachment
+   *  (which we don't support today — keep the form simple). */
+  message: z.string().min(1).max(4000),
+  /** Auto-included diagnostic block. Generated client-side from
+   *  navigator.userAgent / build-injected app version / settings state.
+   *  Helps reproduce issues without a back-and-forth. */
+  diagnostics: z.object({
+    appVersion: z.string().max(40),
+    userAgent: z.string().max(500),
+    locale: z.string().max(20),
+    activeProvider: z.string().max(40).optional(),
+    signedInEmail: z.string().email().max(320).optional(),
+    submittedAt: z.string().max(40),
+  }),
+  /** Optional Firebase ID token. Same shape as PromptRequest's authToken.
+   *  Optix Cloud users send this so the relay can correlate the message
+   *  with their account; BYO-key users submit anonymously. */
+  authToken: z.string().min(100).max(5000).optional(),
+});
+export type FeedbackSubmission = z.infer<typeof FeedbackSubmissionSchema>;
+
+/** Cloud Function response. `ok: true` is the happy path; on `false`, the
+ *  renderer falls back to opening a mailto: in the user's mail client. */
+export type FeedbackSubmissionResult =
+  | { ok: true }
+  | { ok: false; error: string };

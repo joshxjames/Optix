@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { getFreshIdToken } from '../firebase';
 
 // Email this form sends to. Centralised here so renaming the destination
 // (e.g. moving to a dedicated support@ address later) is a one-line edit.
@@ -32,6 +33,15 @@ const CATEGORIES: Category[] = [
   'Other',
 ];
 
+type Status =
+  | { kind: 'idle' }
+  | { kind: 'sending' }
+  | { kind: 'sent' }
+  /** Relay submission failed. We expose a "send via email client" button
+   *  so the user can fall back gracefully — the message body is preserved
+   *  so they don't lose what they typed. */
+  | { kind: 'failed'; error: string };
+
 type Props = {
   /** Provider currently active in the widget — surfaced in the email
    *  diagnostics block so we can reproduce issues that depend on which
@@ -39,90 +49,163 @@ type Props = {
    *  opened before any provider is configured. */
   activeProvider?: string;
   /** Optix Cloud user email if signed in. Pre-fills the "your email"
-   *  field so the user doesn't have to retype. */
+   *  field, AND triggers an authenticated submission (we attach a fresh
+   *  Firebase ID token to the relay request so it can correlate the
+   *  message with the user's account). */
   signedInEmail?: string;
 };
 
-/** Inline support form. Submitting opens the user's default mail client
- *  with a pre-filled message — no backend dependency, works offline,
- *  works on every OS Electron supports.
+/** Inline support form. Submission flow:
  *
- *  Diagnostic info (app version, platform string, active provider) is
- *  appended to the body so support can reproduce issues without a
- *  back-and-forth. The user can edit before sending. */
+ *  1. POST form data to the `submitFeedback` Cloud Function via
+ *     `window.optix.feedback.submit`. Cloud Function uses nodemailer +
+ *     SMTP credentials stored in Firebase secrets to send an email
+ *     to the support address.
+ *  2. On success: show a "thanks, message sent" state.
+ *  3. On failure (relay unreachable, 5xx, timeout): show an error
+ *     message + offer a "Open in email client" fallback button. The
+ *     fallback uses `shell.openExternal('mailto:...')` from main
+ *     because the renderer's own `window.location.href = mailto:` is
+ *     blocked by the widget's navigation guard.
+ *
+ *  Diagnostic info (app version, platform, locale, active provider,
+ *  signed-in email) is auto-included in the email body so support can
+ *  reproduce issues without a back-and-forth. */
 export function SupportForm({ activeProvider, signedInEmail }: Props) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState(signedInEmail ?? '');
   const [category, setCategory] = useState<Category>('Bug report');
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
-  const [submittedAt, setSubmittedAt] = useState<number | null>(null);
+  const [status, setStatus] = useState<Status>({ kind: 'idle' });
 
   const canSubmit =
-    subject.trim().length > 0 && message.trim().length > 0 && !submittedAt;
+    subject.trim().length > 0 &&
+    message.trim().length > 0 &&
+    status.kind !== 'sending' &&
+    status.kind !== 'sent';
 
-  const handleSubmit = (e: React.FormEvent): void => {
-    e.preventDefault();
-    if (!canSubmit) return;
+  /** Build the diagnostics block once — used both for the relay payload
+   *  and the mailto fallback so the support inbox sees consistent
+   *  context regardless of which path the message took. */
+  const buildDiagnostics = () => ({
+    appVersion: APP_VERSION,
+    userAgent: navigator.userAgent.slice(0, 500),
+    locale: navigator.language,
+    ...(activeProvider !== undefined ? { activeProvider } : {}),
+    ...(signedInEmail !== undefined ? { signedInEmail } : {}),
+    submittedAt: new Date().toISOString(),
+  });
 
-    // Diagnostic block appended below the user's message. Keeps the user's
-    // own copy untouched and gives support a reproducible context block.
-    const diagnostics = [
-      `App version: ${APP_VERSION}`,
-      `Platform: ${navigator.userAgent}`,
-      `Locale: ${navigator.language}`,
-      activeProvider ? `Active provider: ${activeProvider}` : null,
-      signedInEmail ? `Optix Cloud account: ${signedInEmail}` : null,
-      `Submitted: ${new Date().toISOString()}`,
+  /** Render the diagnostics object as a plain-text block — used by the
+   *  mailto fallback to embed the same context. */
+  const diagnosticsAsText = (d: ReturnType<typeof buildDiagnostics>): string =>
+    [
+      `App version: ${d.appVersion}`,
+      `Platform: ${d.userAgent}`,
+      `Locale: ${d.locale}`,
+      d.activeProvider ? `Active provider: ${d.activeProvider}` : null,
+      d.signedInEmail ? `Optix Cloud account: ${d.signedInEmail}` : null,
+      `Submitted: ${d.submittedAt}`,
     ]
       .filter(Boolean)
       .join('\n');
 
-    const body =
-      [
-        name ? `From: ${name}` : null,
-        email ? `Reply to: ${email}` : null,
-        `Category: ${category}`,
-        '',
+  const buildMailtoBody = (d: ReturnType<typeof buildDiagnostics>): string =>
+    [
+      name ? `From: ${name}` : null,
+      email ? `Reply to: ${email}` : null,
+      `Category: ${category}`,
+      '',
+      message,
+      '',
+      '---',
+      'Diagnostics (auto-included):',
+      diagnosticsAsText(d),
+    ]
+      .filter((line) => line !== null)
+      .join('\n');
+
+  const handleSubmit = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setStatus({ kind: 'sending' });
+
+    const diagnostics = buildDiagnostics();
+
+    // Fetch a fresh Firebase ID token if the user is signed into Optix
+    // Cloud. Anonymous submissions are fine — the relay accepts them
+    // (with rate-limiting) for BYO-key users who never sign in. Wrap
+    // the token fetch in try/catch so a transient SDK hiccup doesn't
+    // kill the submission entirely.
+    let authToken: string | undefined;
+    if (signedInEmail) {
+      try {
+        const tok = await getFreshIdToken();
+        if (tok) authToken = tok;
+      } catch {
+        // best-effort — submit without auth, relay will treat as anon
+      }
+    }
+
+    try {
+      const result = await window.optix.feedback.submit({
+        name,
+        email: email || '',
+        category,
+        subject,
         message,
-        '',
-        '---',
-        'Diagnostics (auto-included):',
         diagnostics,
-      ]
-        .filter((line) => line !== null)
-        .join('\n');
+        ...(authToken !== undefined ? { authToken } : {}),
+      });
 
-    // mailto: spec is fussy about line breaks. Use %0D%0A (CRLF) per RFC
-    // 6068; some clients also accept %0A but Outlook/Mail are strict.
-    const mailto =
-      `mailto:${encodeURIComponent(SUPPORT_EMAIL)}` +
-      `?subject=${encodeURIComponent(`[${category}] ${subject}`)}` +
-      `&body=${encodeURIComponent(body).replace(/%20/g, '%20')}`;
-
-    // Use window.location.href = mailto over <a> click — works inside
-    // an Electron sandboxed renderer where window.open might be blocked
-    // by our setWindowOpenHandler (which routes most opens through
-    // safeOpenExternal). mailto: is whitelisted by the OS handler.
-    window.location.href = mailto;
-    setSubmittedAt(Date.now());
+      if (result.ok) {
+        setStatus({ kind: 'sent' });
+      } else {
+        setStatus({ kind: 'failed', error: result.error });
+      }
+    } catch (err) {
+      // IPC handler itself threw (validation error, etc.) — shouldn't
+      // happen with a well-formed form, but guard anyway.
+      const errMsg = err instanceof Error ? err.message : String(err);
+      setStatus({ kind: 'failed', error: errMsg });
+    }
   };
 
-  if (submittedAt) {
+  const handleMailtoFallback = async (): Promise<void> => {
+    const diagnostics = buildDiagnostics();
+    const body = buildMailtoBody(diagnostics);
+    try {
+      await window.optix.feedback.openMailto({
+        to: SUPPORT_EMAIL,
+        subject: `[${category}] ${subject}`,
+        body,
+      });
+      setStatus({ kind: 'sent' });
+    } catch {
+      // Last-resort: leave the user the address to copy. Update the
+      // status copy to surface the email so they can paste it manually
+      // into whatever mail tool they have.
+      setStatus({
+        kind: 'failed',
+        error: `Could not open an email client. Please email ${SUPPORT_EMAIL} directly.`,
+      });
+    }
+  };
+
+  const reset = (): void => {
+    setStatus({ kind: 'idle' });
+    setSubject('');
+    setMessage('');
+  };
+
+  if (status.kind === 'sent') {
     return (
       <div className="support-form support-form--sent">
         <p>
-          Your message has been opened in your email client. Click <strong>Send</strong> there to deliver it to {SUPPORT_EMAIL}.
+          <strong>Thanks!</strong> Your message has been sent. We'll reply within 1–2 business days.
         </p>
-        <button
-          type="button"
-          className="btn btn--small"
-          onClick={() => {
-            setSubmittedAt(null);
-            setSubject('');
-            setMessage('');
-          }}
-        >
+        <button type="button" className="btn btn--small" onClick={reset}>
           Send another
         </button>
       </div>
@@ -130,7 +213,7 @@ export function SupportForm({ activeProvider, signedInEmail }: Props) {
   }
 
   return (
-    <form className="support-form" onSubmit={handleSubmit}>
+    <form className="support-form" onSubmit={(e) => void handleSubmit(e)}>
       <label className="support-form__row">
         <span className="support-form__label">Your name <em>(optional)</em></span>
         <input
@@ -140,6 +223,7 @@ export function SupportForm({ activeProvider, signedInEmail }: Props) {
           onChange={(e) => setName(e.target.value)}
           maxLength={120}
           autoComplete="name"
+          disabled={status.kind === 'sending'}
         />
       </label>
 
@@ -153,6 +237,7 @@ export function SupportForm({ activeProvider, signedInEmail }: Props) {
           maxLength={320}
           autoComplete="email"
           placeholder={signedInEmail ? undefined : 'you@example.com'}
+          disabled={status.kind === 'sending'}
         />
       </label>
 
@@ -162,6 +247,7 @@ export function SupportForm({ activeProvider, signedInEmail }: Props) {
           className="support-form__input"
           value={category}
           onChange={(e) => setCategory(e.target.value as Category)}
+          disabled={status.kind === 'sending'}
         >
           {CATEGORIES.map((c) => (
             <option key={c} value={c}>
@@ -180,6 +266,7 @@ export function SupportForm({ activeProvider, signedInEmail }: Props) {
           onChange={(e) => setSubject(e.target.value)}
           maxLength={140}
           required
+          disabled={status.kind === 'sending'}
         />
       </label>
 
@@ -193,11 +280,25 @@ export function SupportForm({ activeProvider, signedInEmail }: Props) {
           rows={6}
           required
           placeholder="Describe the issue or request. Include steps to reproduce if it's a bug."
+          disabled={status.kind === 'sending'}
         />
         <span className="support-form__counter">
           {message.length} / 4000
         </span>
       </label>
+
+      {status.kind === 'failed' && (
+        <div className="support-form__error">
+          <strong>Couldn't send:</strong> {status.error}{' '}
+          <button
+            type="button"
+            className="support-form__fallback-link"
+            onClick={() => void handleMailtoFallback()}
+          >
+            Open in email client instead
+          </button>
+        </div>
+      )}
 
       <div className="support-form__actions">
         <button
@@ -205,7 +306,7 @@ export function SupportForm({ activeProvider, signedInEmail }: Props) {
           className="btn btn--primary"
           disabled={!canSubmit}
         >
-          Open in email client
+          {status.kind === 'sending' ? 'Sending…' : 'Send message'}
         </button>
       </div>
     </form>

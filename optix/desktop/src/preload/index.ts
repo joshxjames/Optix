@@ -260,6 +260,10 @@ const api: OptixApi = {
     readAttachment: (convId, p) =>
       ipcRenderer.invoke(IPC.chatHistory.readAttachment, { convId, path: p }),
   },
+  feedback: {
+    submit: (req) => ipcRenderer.invoke(IPC.feedback.submit, req),
+    openMailto: (req) => ipcRenderer.invoke(IPC.feedback.openMailto, req),
+  },
   plan: {
     read: () => ipcRenderer.invoke(IPC.plan.read),
     save: (req) => ipcRenderer.invoke(IPC.plan.save, req),

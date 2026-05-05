@@ -208,4 +208,16 @@ export const IPC = {
     // renderer → main: read one attachment's bytes by relative path
     readAttachment: 'chatHistory:readAttachment',
   },
+  feedback: {
+    // renderer → main: submit the support form. Main POSTs to the
+    //   Cloud Functions relay which sends an email to the support
+    //   address. Returns { ok: true } on success or { ok: false, error }
+    //   so the form can surface the failure + offer mailto fallback.
+    submit: 'feedback:submit',
+    // renderer → main: open `mailto:` URL via shell.openExternal,
+    //   bypassing the widget's navigation guard. Used as the fallback
+    //   when the relay submission fails (or the user explicitly opts
+    //   for "open in email client").
+    openMailto: 'feedback:openMailto',
+  },
 } as const;

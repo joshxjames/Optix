@@ -9,6 +9,8 @@ import type {
   ComputerLoopTurn,
   Conversation,
   ConversationTurn,
+  FeedbackSubmission,
+  FeedbackSubmissionResult,
   FileExecuteRequest,
   LabelToolAction,
   Mode,
@@ -403,6 +405,19 @@ export interface OptixApi {
       convId: string,
       path: string,
     ) => Promise<{ bytes: Uint8Array; mimeType: string } | null>;
+  };
+  feedback: {
+    /** Submit the support form. Main forwards to the Cloud Functions
+     *  relay (`submitFeedback`) which sends an email via nodemailer
+     *  using SMTP credentials stored in Firebase secrets — never in
+     *  the desktop bundle. Returns `{ ok: true }` on success or
+     *  `{ ok: false, error }` so the form can fall back to mailto. */
+    submit: (req: FeedbackSubmission) => Promise<FeedbackSubmissionResult>;
+    /** Open `mailto:` URL via main-process `shell.openExternal`,
+     *  bypassing the widget's navigation guard (the renderer's own
+     *  `window.location.href = 'mailto:...'` is blocked). Used as the
+     *  graceful fallback when the relay submission fails. */
+    openMailto: (req: { to: string; subject: string; body: string }) => Promise<void>;
   };
 }
 
