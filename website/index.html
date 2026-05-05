@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Optix — AI desktop teacher that sees, answers, acts, automates</title>
+  <title>Optix · AI desktop teacher that sees, answers, acts, automates</title>
   <meta name="description" content="Optix is a floating AI widget for your desktop. It can answer questions about what's on screen, take actions for you, and record those actions as reusable automations. Privacy-first, audit-ready." />
   <meta name="theme-color" content="#0a0a0a" />
 
   <link rel="canonical" href="https://optix.app/" />
 
   <!-- Open Graph -->
-  <meta property="og:title" content="Optix — AI desktop teacher" />
+  <meta property="og:title" content="Optix · AI desktop teacher" />
   <meta property="og:description" content="A floating AI widget that sees your screen and gets things done." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://optix.app/" />
@@ -18,7 +18,7 @@
 
   <!-- Twitter / X -->
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Optix — AI desktop teacher" />
+  <meta name="twitter:title" content="Optix · AI desktop teacher" />
   <meta name="twitter:description" content="A floating AI widget that sees your screen and gets things done." />
 
   <link rel="stylesheet" href="/src/style.css" />
@@ -61,12 +61,20 @@
     <div class="hero__copy">
       <p class="hero__eyebrow" data-anim="hero-eyebrow">Desktop AI assistant</p>
       <h1 class="hero__title" data-anim="hero-title">
-        <span class="hero__title-line">An AI teacher</span>
-        <span class="hero__title-line">that <em>sees</em>, <em>answers</em>,</span>
-        <span class="hero__title-line"><em>acts</em>, <em>automates</em>.</span>
+        <span class="hero__title-line">The teacher</span>
+        <span class="hero__title-line">
+          that
+          <em class="hero__typewriter">
+            <!-- Two-span split so the verb (cyan, inherits from <em>)
+                 and the period (forced white) can have independent
+                 colors while still being part of one typewritten cycle.
+                 First word + period are baked in for the hero entry. -->
+            <span class="hero__typewriter-verb">sees</span><span class="hero__typewriter-dot">.</span><span class="hero__caret" aria-hidden="true">|</span>
+          </em>
+        </span>
       </h1>
       <p class="hero__lede" data-anim="hero-lede">
-        A floating widget for your desktop that takes screenshots of your active window, answers questions about what it sees, and — when you let it — clicks, types, runs commands, and records the whole task so you can replay it with one tap.
+        A floating widget for your desktop that sees, clicks, types, runs commands, and records tasks.
       </p>
       <div class="hero__actions" data-anim="hero-actions">
         <a href="#get-access" class="btn btn--primary">Get early access</a>
@@ -82,13 +90,13 @@
   <!-- =====================================================================
        MODES — 3 cards, 3D perspective tilt on hover, stagger entry
        ===================================================================== -->
-  <section id="modes" class="modes">
+  <section id="modes" class="modes" data-bg-reveal>
     <div class="container">
       <header class="section-header" data-reveal>
         <p class="section-eyebrow">Three modes</p>
         <h2 class="section-title">One widget, three depths of involvement.</h2>
         <p class="section-lede">
-          Switch with a tab. Each mode is more capable than the last — and more locked-down by default.
+          Switch with a tab. Each mode is more capable than the last.
         </p>
       </header>
 
@@ -97,12 +105,12 @@
           <span class="mode-card__num">01</span>
           <h3 class="mode-card__title">Ask</h3>
           <p class="mode-card__desc">
-            Single-shot Q&amp;A over a screenshot of your active window. No actions, no file access.
-            The safest place to start.
+            Single-shot Q&amp;A. No actions, no file access. The safest place to start.
           </p>
           <ul class="mode-card__bullets">
             <li>Streamed answers</li>
             <li>Visual overlay highlights</li>
+            <li>Web search (available in all modes)</li>
             <li>Conversation memory (optional)</li>
           </ul>
         </article>
@@ -111,10 +119,10 @@
           <span class="mode-card__num">02</span>
           <h3 class="mode-card__title">Access</h3>
           <p class="mode-card__desc">
-            Full agent loop. Optix can click, type, scroll, drag, run shell commands, list and read files,
-            search the web, and ask clarifying questions.
+            Optix can click, type, scroll, run shell commands, list and read files.
           </p>
           <ul class="mode-card__bullets">
+            <li>All Ask features</li>
             <li>Per-action or per-task approvals</li>
             <li>Workspace folder boundary</li>
             <li>USD cost ceiling per run</li>
@@ -125,10 +133,10 @@
           <span class="mode-card__num">03</span>
           <h3 class="mode-card__title">Automate</h3>
           <p class="mode-card__desc">
-            Access plus recording. Run a task once with the Record toggle on and it gets saved as a routine
-            you can replay later by typing <code>/OA-N</code> in any prompt.
+            Run a task once, save it as a routine, then replay it later in any prompt.
           </p>
           <ul class="mode-card__bullets">
+            <li>All Access features</li>
             <li>Semantic anchors (UIA + window titles)</li>
             <li>Survives layout shifts</li>
             <li>One-tap replay</li>
@@ -141,57 +149,130 @@
   <!-- =====================================================================
        HOW — visual breakdown, sticky anchored figure on left, scrolling text right
        ===================================================================== -->
-  <section id="how" class="how">
-    <div class="container">
-      <header class="section-header" data-reveal>
-        <p class="section-eyebrow">How it works</p>
-        <h2 class="section-title">It sees what you see.</h2>
-      </header>
+  <!-- ===================================================================
+       HOW IT WORKS — scrollytelling. The section is a tall scroll track
+       (300vh) wrapping a sticky stage. Inside the stage, a graphic and
+       three layered text panels crossfade based on which "trigger zone"
+       the user is currently scrolled into. Triggers are absolute-positioned
+       100vh-tall blocks at 0/100/200vh; an IntersectionObserver in main.js
+       (see setupHowScrollytelling) sets [data-phase] on the section as
+       each trigger crosses the middle of the viewport.
+       =================================================================== -->
+  <section id="how" class="how" data-phase="1">
+    <div class="how__scroll-track">
 
-      <div class="how__grid">
-        <div class="how__visual" data-reveal>
-          <div class="how__frame">
-            <div class="how__frame-bar" aria-hidden="true">
-              <span></span><span></span><span></span>
-            </div>
-            <div class="how__widget" aria-hidden="true">
-              <div class="how__widget-header">OPTIX</div>
-              <div class="how__widget-body">
-                <div class="how__pulse"></div>
-                <div class="how__widget-line"></div>
-                <div class="how__widget-line how__widget-line--short"></div>
+      <!-- Sticky stage — pinned to the top of the viewport for the full
+           duration of the scroll track. Both graphic + text live here,
+           layered with opacity controlled by [data-phase]. -->
+      <div class="how__sticky-stage">
+        <div class="container">
+          <header class="how__header">
+            <p class="section-eyebrow">How it works</p>
+          </header>
+
+          <div class="how__grid">
+            <!-- Graphic — three scenes layered, only one visible at a time. -->
+            <div class="how__visual">
+              <div class="how__frame">
+                <div class="how__frame-bar" aria-hidden="true">
+                  <span></span><span></span><span></span>
+                </div>
+
+                <!-- Persistent widget mock — shared across all scenes. -->
+                <div class="how__widget" aria-hidden="true">
+                  <div class="how__widget-header">OPTIX</div>
+                  <div class="how__widget-body">
+                    <div class="how__pulse"></div>
+                    <div class="how__widget-line"></div>
+                    <div class="how__widget-line how__widget-line--short"></div>
+                  </div>
+                </div>
+
+                <!-- Scene 1 — Ask: scan line sweeps over a faint grid. -->
+                <div class="how__scene how__scene--sees" aria-hidden="true">
+                  <div class="how__scan-grid"></div>
+                  <div class="how__scan-line"></div>
+                </div>
+
+                <!-- Scene 2 — Access: a cursor with click rings. -->
+                <div class="how__scene how__scene--does" aria-hidden="true">
+                  <div class="how__cursor">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M2 2 L2 16 L6 12 L9 19 L11 18 L8 11 L14 11 Z"/>
+                    </svg>
+                    <span class="how__click-ring"></span>
+                    <span class="how__click-ring how__click-ring--delayed"></span>
+                  </div>
+                </div>
+
+                <!-- Scene 3 — Automate: stack of recorded steps + REC dot. -->
+                <div class="how__scene how__scene--works" aria-hidden="true">
+                  <div class="how__rec">
+                    <span class="how__rec-dot"></span>
+                    <span>REC</span>
+                  </div>
+                  <div class="how__steps-stack">
+                    <div class="how__step-row"><span>1</span><div class="how__step-bar"></div></div>
+                    <div class="how__step-row"><span>2</span><div class="how__step-bar how__step-bar--short"></div></div>
+                    <div class="how__step-row"><span>3</span><div class="how__step-bar how__step-bar--mid"></div></div>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
 
-        <div class="how__text">
-          <div class="how__step" data-reveal>
-            <span class="how__step-num">1</span>
-            <h3>Press the hotkey.</h3>
-            <p>
-              Default <kbd>Ctrl + Shift + Space</kbd> (<kbd>⌘ + Shift + Space</kbd> on macOS). The widget appears
-              floating over whatever you're doing.
-            </p>
-          </div>
-          <div class="how__step" data-reveal>
-            <span class="how__step-num">2</span>
-            <h3>Type a question or task.</h3>
-            <p>
-              Optix grabs a screenshot of your active window and sends it to the model along with your prompt.
-              The widget hides itself from its own captures, so the analysis is clean.
-            </p>
-          </div>
-          <div class="how__step" data-reveal>
-            <span class="how__step-num">3</span>
-            <h3>Watch it work.</h3>
-            <p>
-              In Ask mode, the answer streams back. In Access, it asks for approval before each action.
-              In Automate, it records the whole flow as a one-tap replay.
-            </p>
+            <!-- Text — three panels layered, crossfading on phase change. -->
+            <div class="how__text">
+              <article class="how__panel" data-how-phase="1">
+                <p class="how__panel-eyebrow">01 · Ask</p>
+                <h2 class="section-title">It sees what you see.</h2>
+                <p class="how__panel-body">
+                  Press the hotkey, type a question. Optix grabs a screenshot of your active window and streams the answer back.
+                </p>
+                <ul class="how__panel-bullets">
+                  <li>No actions, no file access</li>
+                  <li>Visual overlay highlights</li>
+                  <li>Web search across all modes</li>
+                </ul>
+              </article>
+
+              <article class="how__panel" data-how-phase="2">
+                <p class="how__panel-eyebrow">02 · Access</p>
+                <h2 class="section-title">It does what you ask.</h2>
+                <p class="how__panel-body">
+                  Switch to Access and Optix becomes an agent. It clicks, types, runs commands, and reads files.
+                </p>
+                <ul class="how__panel-bullets">
+                  <li>Per-action or per-task approvals</li>
+                  <li>Workspace folder boundary</li>
+                  <li>USD cost ceiling per run</li>
+                </ul>
+              </article>
+
+              <article class="how__panel" data-how-phase="3">
+                <p class="how__panel-eyebrow">03 · Automate</p>
+                <h2 class="section-title">It works how you work.</h2>
+                <p class="how__panel-body">
+                  Run a task once with Record on. Optix saves it as a routine you can replay later in any prompt with <code>/OA-N</code>.
+                </p>
+                <ul class="how__panel-bullets">
+                  <li>Anchored to UIA + window titles</li>
+                  <li>Survives layout shifts</li>
+                  <li>One-tap replay</li>
+                </ul>
+              </article>
+            </div>
           </div>
         </div>
       </div>
+
+      <!-- Invisible scroll triggers — spaced 0 / 100vh / 200vh apart.
+           Each is 100vh tall; when the middle of one crosses the middle
+           of the viewport, the IntersectionObserver flips [data-phase]
+           on the section. Pointer-events disabled so they don't catch
+           clicks on the sticky-stage content above. -->
+      <div class="how__trigger" data-how-phase="1" aria-hidden="true"></div>
+      <div class="how__trigger" data-how-phase="2" aria-hidden="true"></div>
+      <div class="how__trigger" data-how-phase="3" aria-hidden="true"></div>
     </div>
   </section>
 
@@ -212,7 +293,7 @@
         <div class="privacy__item" data-reveal>
           <div class="privacy__icon" aria-hidden="true">●</div>
           <h3>Privacy pause</h3>
-          <p>Toggle off screen capture for sensitive work — the agent runs blind without crashing.</p>
+          <p>Toggle off screen capture for sensitive work. The agent runs blind without crashing.</p>
         </div>
         <div class="privacy__item" data-reveal>
           <div class="privacy__icon" aria-hidden="true">⏷</div>
@@ -227,7 +308,7 @@
         <div class="privacy__item" data-reveal>
           <div class="privacy__icon" aria-hidden="true">≡</div>
           <h3>Audit log</h3>
-          <p>Every Access run saves as inspectable JSON — messages, turns, actions, per-turn token usage, exact cost.</p>
+          <p>Every Access run saves as inspectable JSON with messages, turns, actions, per-turn token usage, and exact cost.</p>
         </div>
         <div class="privacy__item" data-reveal>
           <div class="privacy__icon" aria-hidden="true">⌧</div>
@@ -237,7 +318,7 @@
         <div class="privacy__item" data-reveal>
           <div class="privacy__icon" aria-hidden="true">⤴</div>
           <h3>BYO key or managed</h3>
-          <p>Bring your own Anthropic / OpenAI / Kimi / Gemini key — or pay for Optix Cloud and skip the setup.</p>
+          <p>Bring your own Anthropic / OpenAI / Kimi / Gemini key, or pay for Optix Cloud and skip the setup.</p>
         </div>
       </div>
     </div>
@@ -246,13 +327,13 @@
   <!-- =====================================================================
        PRICING
        ===================================================================== -->
-  <section id="pricing" class="pricing">
+  <section id="pricing" class="pricing" data-bg-reveal>
     <div class="container">
       <header class="section-header" data-reveal>
         <p class="section-eyebrow">Optix Cloud</p>
         <h2 class="section-title">Skip the API-key setup.</h2>
         <p class="section-lede">
-          Sign in with email, pick a plan, and Claude is unlocked. We handle the keys and forward your requests
+          Sign in with email, pick a plan, and Cloud is unlocked. We handle the keys and forward your requests
           byte-for-byte. Bring-your-own-key remains free forever.
         </p>
       </header>
@@ -269,8 +350,7 @@
             <p class="plan-card__sub">5M tokens / month</p>
           </header>
           <ul class="plan-card__bullets">
-            <li>Claude Opus 4.7 + Sonnet 4.6 + Haiku 4.5</li>
-            <li>All three modes (Ask / Access / Automate)</li>
+            <li>All three modes</li>
             <li>Web search included</li>
             <li>Cancel anytime, prorated</li>
           </ul>
@@ -291,7 +371,6 @@
           <ul class="plan-card__bullets">
             <li>Everything in Starter</li>
             <li>Priority support</li>
-            <li>3× the monthly token allowance</li>
             <li>Cancel anytime, prorated</li>
           </ul>
           <a href="#get-access" class="btn btn--primary plan-card__cta">Get Pro</a>
@@ -308,7 +387,6 @@
           <ul class="plan-card__bullets">
             <li>Anthropic, OpenAI, Kimi, or Gemini</li>
             <li>You pay your provider, not us</li>
-            <li>Same widget, same modes</li>
             <li>Stored in your OS keychain</li>
           </ul>
           <a href="#get-access" class="btn btn--ghost plan-card__cta">Get the app</a>
@@ -323,29 +401,43 @@
   <section id="get-access" class="get-access">
     <div class="container">
       <div class="get-access__inner" data-reveal>
-        <h2 class="section-title">Get early access.</h2>
+        <p class="section-eyebrow">Get early access</p>
+        <h2 class="section-title">One widget, three platforms.</h2>
         <p class="section-lede">
-          Optix is in private early access while we finalise signed builds for each platform. Email us and we'll send you a download link plus a sign-up link for Optix Cloud.
+          Optix is a native Electron desktop app that runs on Windows, macOS, and Linux. Same widget, same hotkey, same modes on all three.
         </p>
         <div class="get-access__platforms">
           <a class="platform-card" href="mailto:admin@covetable.com.au?subject=Optix%20early%20access%20%E2%80%94%20Windows" data-reveal>
+            <!-- Microsoft Windows logo (4-square). Inline so we can recolor
+                 via currentColor and not ship an extra HTTP request. -->
+            <svg class="platform-card__logo" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M0 3.449L9.75 2.1v9.451H0M10.949 1.949 24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24L10.949 22.051"/>
+            </svg>
             <div class="platform-card__os">Windows</div>
-            <div class="platform-card__detail">Portable .exe — no installer.</div>
-            <div class="platform-card__cta">Request &rarr;</div>
+            <div class="platform-card__cta">↓ Download</div>
           </a>
           <a class="platform-card" href="mailto:admin@covetable.com.au?subject=Optix%20early%20access%20%E2%80%94%20macOS" data-reveal>
+            <!-- Apple logo (the bitten-apple silhouette). -->
+            <svg class="platform-card__logo" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
+            </svg>
             <div class="platform-card__os">macOS</div>
-            <div class="platform-card__detail">Signed .dmg, macOS 12+.</div>
-            <div class="platform-card__cta">Request &rarr;</div>
+            <div class="platform-card__cta">↓ Download</div>
           </a>
           <a class="platform-card" href="mailto:admin@covetable.com.au?subject=Optix%20early%20access%20%E2%80%94%20Linux" data-reveal>
+            <!-- Tux — the canonical Linux mascot (Simple Icons path). -->
+            <svg class="platform-card__logo" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.077 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 0 0-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.65-.28 1.103-.106 1.42.174.32.535.469.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2.025.134.063.198.114.333l.003.003c.391.778 1.113 1.132 1.884 1.071.771-.06 1.592-.536 2.257-1.306.631-.765 1.683-1.084 2.378-1.503.348-.199.629-.469.649-.853.023-.4-.2-.811-.714-1.376v-.097l-.003-.003c-.17-.2-.25-.535-.338-.926-.085-.401-.182-.786-.492-1.046h-.003c-.066-.06-.144-.07-.222-.097-.077-.03-.158-.044-.252-.066-.207-.272-.487-.575-.872-.876-.38-.302-.842-.595-1.387-.852.21-.625.224-1.343.183-2.022-.092-1.555-.493-3.085-1.16-4.493-.677-1.418-1.61-2.692-2.751-3.692-1.114-.972-2.405-1.61-3.766-1.78a3.952 3.952 0 0 0-.387-.022zm.371 3.448c.728-.026 1.466.182 2.058.55.823.512 1.494 1.318 1.846 2.196.395.985.476 2.103.157 3.13-.165.524-.43 1.03-.851 1.428-.213.198-.466.376-.751.484a2.49 2.49 0 0 1-.96.135c-.65-.043-1.245-.36-1.708-.79-.464-.43-.794-.972-.927-1.566-.124-.555-.05-1.176.085-1.726.193-.793.51-1.612 1.073-2.21.305-.323.683-.58 1.075-.722.156-.057.319-.105.503-.115.116-.005.234.002.349-.002.017 0 .034 0 .051-.002zm-3.595.135c.404-.005.819.082 1.184.286.488.272.864.732 1.058 1.252.165.444.222.92.21 1.388-.014.563-.142 1.143-.434 1.62-.292.477-.768.838-1.31.95a1.864 1.864 0 0 1-.86-.039c-.48-.13-.882-.46-1.179-.86-.468-.633-.69-1.444-.598-2.236.064-.553.286-1.082.617-1.526.164-.222.355-.422.583-.563.218-.135.471-.221.728-.272z"/>
+            </svg>
             <div class="platform-card__os">Linux</div>
-            <div class="platform-card__detail">Portable .AppImage.</div>
-            <div class="platform-card__cta">Request &rarr;</div>
+            <div class="platform-card__cta">↓ Download</div>
           </a>
         </div>
         <p class="get-access__contact">
-          Or just email <a href="mailto:admin@covetable.com.au">admin@covetable.com.au</a> with what you'd want to use it for.
+          Talk to a human →
+          <button type="button" class="link-button" data-open-contact>
+            Contact our Support Team
+          </button>
         </p>
       </div>
     </div>
@@ -369,6 +461,116 @@
       </nav>
     </div>
   </footer>
+
+  <!-- =====================================================================
+       CONTACT MODAL — opened by [data-open-contact] buttons (currently
+       just one in the Get Access section). Form posts to the same
+       Cloud Function the desktop app uses (submitFeedback) so support
+       email lands in the same inbox. Honeypot field deters bots.
+       Hidden by default via [hidden]; main.js toggles visibility,
+       handles focus management, and submits the form.
+       ===================================================================== -->
+  <div class="contact-modal" data-contact-modal hidden aria-hidden="true">
+    <div class="contact-modal__backdrop" data-close-contact></div>
+    <div
+      class="contact-modal__panel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="contact-modal-title"
+    >
+      <button
+        type="button"
+        class="contact-modal__close"
+        data-close-contact
+        aria-label="Close contact form"
+      >×</button>
+      <h2 id="contact-modal-title" class="contact-modal__title">Contact our Support Team</h2>
+      <p class="contact-modal__lede">
+        Drop us a line and we'll reply within 1 to 2 business days.
+      </p>
+      <form class="contact-form" data-contact-form novalidate>
+        <!-- Honeypot — visually hidden + skipped by keyboard. Bots that
+             auto-fill every input will populate this; the JS submission
+             handler aborts when it's non-empty, and the Cloud Function
+             rejects the same way as a defense-in-depth check. The label
+             is named "website" because that's a common bot target. -->
+        <div class="contact-form__honeypot" aria-hidden="true">
+          <label>
+            Don't fill this in if you're human:
+            <input
+              type="text"
+              name="website"
+              tabindex="-1"
+              autocomplete="off"
+              data-honeypot
+            />
+          </label>
+        </div>
+
+        <label class="contact-form__row">
+          <span class="contact-form__label">Your name <em>(optional)</em></span>
+          <input type="text" name="name" class="contact-form__input" maxlength="120" autocomplete="name" />
+        </label>
+
+        <label class="contact-form__row">
+          <span class="contact-form__label">Your email</span>
+          <input
+            type="email"
+            name="email"
+            class="contact-form__input"
+            maxlength="320"
+            autocomplete="email"
+            placeholder="you@example.com"
+            required
+          />
+        </label>
+
+        <label class="contact-form__row">
+          <span class="contact-form__label">Topic</span>
+          <select name="category" class="contact-form__input">
+            <option>Question</option>
+            <option>Bug report</option>
+            <option>Feature request</option>
+            <option>Billing / Optix Cloud</option>
+            <option>Other</option>
+          </select>
+        </label>
+
+        <label class="contact-form__row">
+          <span class="contact-form__label">Subject</span>
+          <input type="text" name="subject" class="contact-form__input" maxlength="140" required />
+        </label>
+
+        <label class="contact-form__row">
+          <span class="contact-form__label">Message</span>
+          <textarea
+            name="message"
+            class="contact-form__input contact-form__textarea"
+            maxlength="4000"
+            rows="6"
+            required
+            placeholder="Tell us what's on your mind."
+          ></textarea>
+          <span class="contact-form__counter" data-counter>0 / 4000</span>
+        </label>
+
+        <div class="contact-form__error" data-form-error hidden></div>
+
+        <div class="contact-form__actions">
+          <button type="button" class="btn btn--ghost" data-close-contact>Cancel</button>
+          <button type="submit" class="btn btn--primary" data-submit-button>Send message</button>
+        </div>
+      </form>
+
+      <!-- Sent state — replaces the form when submission succeeds. -->
+      <div class="contact-form__sent" data-sent-state hidden>
+        <div class="contact-form__sent-mark" aria-hidden="true">✓</div>
+        <h3>Message sent</h3>
+        <p>Thanks for reaching out. We'll reply within 1 to 2 business days.</p>
+        <button type="button" class="btn btn--ghost" data-close-contact>Close</button>
+      </div>
+    </div>
+  </div>
 
   <script type="module" src="/src/main.js"></script>
 </body>

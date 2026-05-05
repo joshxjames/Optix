@@ -70,6 +70,107 @@ function animateHero() {
 }
 
 // ----------------------------------------------------------------------------
+// Hero typewriter — rotates through the verb list. Pure JS state machine
+// (typing → holding → erasing → next word → loop). anime.js is overkill
+// for character-by-character text manipulation; setTimeout chaining gives
+// finer control over the per-phase timing.
+//
+// Kicks in AFTER the hero entry sequence has settled so the user gets a
+// clean read of the title before the rotation starts.
+// ----------------------------------------------------------------------------
+
+// Words include the trailing period so it gets typed + erased with each
+// cycle. The period is rendered into a separate span so it can stay white
+// while the verb stays cyan — see render() below.
+const TYPEWRITER_WORDS = ['sees.', 'answers.', 'acts.', 'automates.'];
+const TYPEWRITER_TIMING = {
+  type: 90,         // ms per char while typing
+  erase: 45,        // ms per char while erasing (snappier than typing)
+  hold: 1600,       // ms to display fully-typed word
+  pause: 220,       // ms between erasing one word and typing the next
+  startDelay: 1800, // ms after page load before the first cycle begins
+};
+
+function setupHeroTypewriter() {
+  const verbEl = document.querySelector('.hero__typewriter-verb');
+  const dotEl = document.querySelector('.hero__typewriter-dot');
+  if (!verbEl || !dotEl) return;
+
+  // prefers-reduced-motion users get a static word; cycle is purely
+  // decorative so we drop it without UX loss.
+  if (PREFERS_REDUCED) return;
+
+  /** Render a partially-typed string across the two spans. The verb part
+   *  goes to the cyan span; the trailing period (if present) goes to the
+   *  white span. Splitting like this keeps the colors decoupled while
+   *  the timing still treats the dot as character N+1 of each word. */
+  function render(typed) {
+    if (typed.endsWith('.')) {
+      verbEl.textContent = typed.slice(0, -1);
+      dotEl.textContent = '.';
+    } else {
+      verbEl.textContent = typed;
+      dotEl.textContent = '';
+    }
+  }
+
+  // Start state derived from the SSR markup: whichever word is fully
+  // rendered (verb + dot combined). Falls back to first word on mismatch.
+  const initial = (verbEl.textContent ?? '') + (dotEl.textContent ?? '');
+  let wordIndex = TYPEWRITER_WORDS.indexOf(initial.trim());
+  if (wordIndex === -1) wordIndex = 0;
+  let charIndex = initial.length;
+
+  // States: 'hold' (fully typed, waiting), 'erase' (deleting chars),
+  // 'type' (adding chars). Start in 'hold' to give the user a beat
+  // with the original word visible before the rotation kicks in.
+  let phase = 'hold';
+
+  function tick() {
+    const word = TYPEWRITER_WORDS[wordIndex];
+    if (!word) return; // safety — array somehow empty
+
+    if (phase === 'hold') {
+      phase = 'erase';
+      setTimeout(tick, TYPEWRITER_TIMING.hold);
+      return;
+    }
+
+    if (phase === 'erase') {
+      charIndex = Math.max(0, charIndex - 1);
+      render(word.slice(0, charIndex));
+      if (charIndex === 0) {
+        // Move to the next word + start typing.
+        wordIndex = (wordIndex + 1) % TYPEWRITER_WORDS.length;
+        phase = 'type';
+        setTimeout(tick, TYPEWRITER_TIMING.pause);
+        return;
+      }
+      setTimeout(tick, TYPEWRITER_TIMING.erase);
+      return;
+    }
+
+    if (phase === 'type') {
+      const next = TYPEWRITER_WORDS[wordIndex];
+      if (!next) return;
+      charIndex = Math.min(next.length, charIndex + 1);
+      render(next.slice(0, charIndex));
+      if (charIndex === next.length) {
+        phase = 'hold';
+        setTimeout(tick, 0);
+        return;
+      }
+      setTimeout(tick, TYPEWRITER_TIMING.type);
+    }
+  }
+
+  // Kick off after the hero entry settles. The full hero stagger ends
+  // around 1.5s (eyebrow → 3 title lines → lede → CTAs → scroll hint);
+  // 1.8s gives a half-beat of stillness before the cycle starts.
+  setTimeout(tick, TYPEWRITER_TIMING.startDelay);
+}
+
+// ----------------------------------------------------------------------------
 // Scroll-revealed elements — anything with [data-reveal].
 // IntersectionObserver triggers a one-shot anime.js transition the first time
 // each element enters the viewport. We add [data-revealed] as an idempotency
@@ -122,6 +223,92 @@ function setupRevealOnScroll() {
   );
 
   els.forEach((el) => io.observe(el));
+}
+
+// ----------------------------------------------------------------------------
+// "How it works" scrollytelling — observe the 3 invisible trigger blocks
+// inside the section's scroll track and flip [data-phase] on the section
+// root as each one crosses the middle of the viewport. The CSS handles
+// the crossfade between layered scenes (graphic) + panels (text).
+//
+// rootMargin: '-50% 0px -50% 0px' narrows the active zone to a 0px-tall
+// horizontal slice at the dead-center of the viewport. A trigger block
+// "fires" when its top edge crosses below center AND its bottom edge is
+// still above — i.e., the user is currently in the middle of that
+// trigger's 100vh range. This gives crisp phase changes at predictable
+// scroll positions.
+// ----------------------------------------------------------------------------
+
+function setupHowScrollytelling() {
+  const section = document.querySelector('#how');
+  if (!section) return;
+  const triggers = section.querySelectorAll('.how__trigger');
+  if (triggers.length === 0) return;
+
+  // On reduced-motion / mobile-collapsed layout, the triggers are hidden
+  // (display: none via the @media query). The observer would still fire
+  // but with all triggers off-screen, the result is no-op. Bail early
+  // either way — saves a microtask per scroll event.
+  if (PREFERS_REDUCED) return;
+
+  const io = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        const phase = entry.target.getAttribute('data-how-phase');
+        if (phase) section.setAttribute('data-phase', phase);
+      });
+    },
+    {
+      // Active zone: the dead center of the viewport. A trigger block
+      // intersects this 0px-tall slice when its middle is in the viewport
+      // middle, giving a clean phase boundary at every 100vh of scroll.
+      rootMargin: '-50% 0px -50% 0px',
+      threshold: 0,
+    },
+  );
+
+  triggers.forEach((t) => io.observe(t));
+}
+
+// ----------------------------------------------------------------------------
+// Section-background reveals — sections marked [data-bg-reveal] paint
+// their gradient via ::before with opacity:0; this observer adds
+// [data-bg-revealed] when the section enters the viewport so the bg
+// fades in alongside the cards (instead of being painted statically
+// before the user has scrolled to that section's content).
+// ----------------------------------------------------------------------------
+
+function setupSectionBgReveal() {
+  const sections = document.querySelectorAll('[data-bg-reveal]');
+  if (sections.length === 0) return;
+
+  if (PREFERS_REDUCED) {
+    // Skip the fade — show bg immediately so the visual still works.
+    sections.forEach((s) => s.setAttribute('data-bg-revealed', ''));
+    return;
+  }
+
+  const io = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        if (entry.target.hasAttribute('data-bg-revealed')) return;
+        entry.target.setAttribute('data-bg-revealed', '');
+        io.unobserve(entry.target);
+      });
+    },
+    {
+      // Fire fairly early so the bg has time to finish its 1s fade
+      // before the user is fully in the section. Smaller threshold +
+      // negative bottom rootMargin = "the section is just starting to
+      // come into view from the bottom".
+      threshold: 0.05,
+      rootMargin: '0px 0px -120px 0px',
+    },
+  );
+
+  sections.forEach((s) => io.observe(s));
 }
 
 // ----------------------------------------------------------------------------
@@ -289,14 +476,218 @@ function setupHeroVideoFallback() {
 // Boot — wire it all up after DOMContentLoaded so we don't race the layout.
 // ----------------------------------------------------------------------------
 
+// ----------------------------------------------------------------------------
+// Contact modal — opened by [data-open-contact] buttons, closed by
+// [data-close-contact], the backdrop, or Escape. Form submits to the
+// existing `submitFeedback` Cloud Function (same endpoint the desktop
+// widget posts to) so support emails land in the same inbox.
+//
+// Honeypot: an off-screen "website" input that human users never see
+// or fill. Bots that auto-fill every field will populate it; the JS
+// silent-rejects any submission with a non-empty honeypot. The Cloud
+// Function does the same check server-side as defense-in-depth.
+// ----------------------------------------------------------------------------
+
+const SUBMIT_FEEDBACK_URL =
+  'https://us-central1-optix-22473.cloudfunctions.net/submitFeedback';
+const SUBMIT_TIMEOUT_MS = 15_000;
+
+function setupContactModal() {
+  const modal = document.querySelector('[data-contact-modal]');
+  if (!modal) return;
+
+  const form = modal.querySelector('[data-contact-form]');
+  const errorEl = modal.querySelector('[data-form-error]');
+  const submitBtn = modal.querySelector('[data-submit-button]');
+  const sentState = modal.querySelector('[data-sent-state]');
+  const honeypot = modal.querySelector('[data-honeypot]');
+  const counter = modal.querySelector('[data-counter]');
+  const messageInput = modal.querySelector('textarea[name="message"]');
+  const closeButtons = modal.querySelectorAll('[data-close-contact]');
+  const openButtons = document.querySelectorAll('[data-open-contact]');
+
+  if (!form || !errorEl || !submitBtn || !sentState || !honeypot) return;
+
+  let lastFocusedBeforeOpen = null;
+
+  function showError(message) {
+    errorEl.textContent = message;
+    errorEl.hidden = false;
+  }
+
+  function hideError() {
+    errorEl.textContent = '';
+    errorEl.hidden = true;
+  }
+
+  function openModal() {
+    lastFocusedBeforeOpen = document.activeElement;
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('contact-modal-open');
+    // Defer focus until after the modal paints so the focus ring lands
+    // cleanly on the first input rather than flashing into the close
+    // button on render.
+    requestAnimationFrame(() => {
+      const firstInput = form.querySelector('input[name="email"]');
+      if (firstInput instanceof HTMLElement) firstInput.focus();
+    });
+  }
+
+  function closeModal() {
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('contact-modal-open');
+    hideError();
+    // Restore focus to whatever opened the modal so keyboard users
+    // don't lose their place in the page.
+    if (lastFocusedBeforeOpen instanceof HTMLElement) {
+      lastFocusedBeforeOpen.focus();
+    }
+  }
+
+  // Reset to the form view (used after a "Send another" or after a
+  // sent → close → reopen cycle).
+  function resetToForm() {
+    form.hidden = false;
+    sentState.hidden = true;
+    form.reset();
+    if (counter) counter.textContent = '0 / 4000';
+    hideError();
+  }
+
+  // Wire up open / close triggers.
+  openButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      resetToForm();
+      openModal();
+    });
+  });
+  closeButtons.forEach((btn) => {
+    btn.addEventListener('click', closeModal);
+  });
+
+  // Escape closes the modal when it's open. Single document-level
+  // listener (not toggled on open/close) is simpler and the cost is
+  // negligible — one keydown branch per event.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !modal.hidden) closeModal();
+  });
+
+  // Live character counter on the message field.
+  if (messageInput && counter) {
+    messageInput.addEventListener('input', () => {
+      counter.textContent = `${messageInput.value.length} / 4000`;
+    });
+  }
+
+  // Form submission.
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    hideError();
+
+    // Honeypot check — silent reject. Don't surface an error or any
+    // signal that we noticed; bots get the same UX as a successful
+    // submit so they don't adapt.
+    if (honeypot.value && honeypot.value.length > 0) {
+      // Pretend it worked so bots don't retry with different field names.
+      form.hidden = true;
+      sentState.hidden = false;
+      return;
+    }
+
+    const data = new FormData(form);
+    const name = String(data.get('name') ?? '').trim();
+    const email = String(data.get('email') ?? '').trim();
+    const category = String(data.get('category') ?? 'Question');
+    const subject = String(data.get('subject') ?? '').trim();
+    const message = String(data.get('message') ?? '').trim();
+
+    // Client-side validation (HTML required attrs catch most of this,
+    // but novalidate disables the browser bubbles so we surface our
+    // own message in a consistent tone of voice).
+    if (!email || !email.includes('@')) {
+      showError('Please enter a valid email address.');
+      return;
+    }
+    if (!subject) {
+      showError('Please add a subject.');
+      return;
+    }
+    if (!message) {
+      showError('Please write a message.');
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Sending…';
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), SUBMIT_TIMEOUT_MS);
+
+    try {
+      const res = await fetch(SUBMIT_FEEDBACK_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          name,
+          email,
+          category,
+          subject,
+          message,
+          // Honeypot is included in the payload so the Cloud Function
+          // can also reject server-side. Most of the time this is empty
+          // (real submissions) and the CF treats absence + empty string
+          // identically. See submitFeedback.ts in the Optix-Cloud repo.
+          honeypot: honeypot.value || '',
+          diagnostics: {
+            appVersion: 'website',
+            userAgent: navigator.userAgent.slice(0, 500),
+            locale: navigator.language,
+            submittedAt: new Date().toISOString(),
+          },
+        }),
+      });
+
+      if (!res.ok) {
+        if (res.status === 429) {
+          showError('Too many submissions. Please wait a few minutes and try again.');
+        } else {
+          showError("Something went wrong. Please try again, or email admin@covetable.com.au directly.");
+        }
+        return;
+      }
+
+      // Success — swap to the sent state.
+      form.hidden = true;
+      sentState.hidden = false;
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        showError('Submission timed out. Please check your connection and try again.');
+      } else {
+        showError("Couldn't reach the server. Please try again, or email admin@covetable.com.au directly.");
+      }
+    } finally {
+      clearTimeout(timer);
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Send message';
+    }
+  });
+}
+
 function boot() {
   setupHeroVideoFallback();
   animateHero();
+  setupHeroTypewriter();
+  setupSectionBgReveal();
+  setupHowScrollytelling();
   setupRevealOnScroll();
   setupCardTilt();
   setupScrollProgress();
   setupAutoHideNav();
   setupPriceCounters();
+  setupContactModal();
 }
 
 if (document.readyState === 'loading') {

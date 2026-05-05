@@ -25,10 +25,10 @@
 
      Light variant not yet a goal; if it ever is, prefer toggling these
      tokens via a [data-theme="light"] override on <html>. */
-  --bg: #02161b;            /* deep teal-black — matches the surrounding void */
-  --bg-soft: #062229;       /* slightly elevated, faint cyan undertone */
-  --bg-elev: #0a2d36;       /* card surfaces, deeper teal */
-  --bg-glass: rgba(10, 45, 54, 0.6);
+  --bg: #010a0f;            /* near-black with the faintest cyan undertone — matches the very darkest void around the hero nebula. paired with --bg-soft for a subtle top-to-bottom section gradient that adds depth without lightening the overall mood */
+  --bg-soft: #03141a;       /* gradient end — about ~50% of the way back toward the hero's mid-band, so sections feel like they have lift without ever crossing into "lighter UI shell" territory */
+  --bg-elev: #0a2632;       /* card surfaces — distinct from bg without leaving the same teal family */
+  --bg-glass: rgba(10, 38, 50, 0.6);
   --fg: #eaf8fb;            /* slight cool tint on the white text — sits well on teal */
   --fg-muted: #8fa9ae;
   --fg-dim: #4f6065;
@@ -186,7 +186,7 @@ section { padding: var(--section-pad) 0; position: relative; }
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: linear-gradient(to bottom, rgba(2, 22, 27, 0.85), rgba(2, 22, 27, 0));
+  background: linear-gradient(to bottom, rgba(1, 10, 15, 0.85), rgba(1, 10, 15, 0));
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   transform: translateY(0);
@@ -259,8 +259,8 @@ section { padding: var(--section-pad) 0; position: relative; }
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(to top, rgba(2, 22, 27, 0.92) 0%, rgba(2, 22, 27, 0.4) 40%, rgba(2, 22, 27, 0.6) 100%),
-    linear-gradient(to right, rgba(2, 22, 27, 0.55) 0%, rgba(2, 22, 27, 0) 60%);
+    linear-gradient(to top, rgba(1, 10, 15, 0.92) 0%, rgba(1, 10, 15, 0.4) 40%, rgba(1, 10, 15, 0.6) 100%),
+    linear-gradient(to right, rgba(1, 10, 15, 0.55) 0%, rgba(1, 10, 15, 0) 60%);
   z-index: 1;
 }
 .hero__copy {
@@ -291,6 +291,39 @@ section { padding: var(--section-pad) 0; position: relative; }
   opacity: 0;
   transform: translateY(24px);
 }
+
+/* Typewriter — rotates through "sees. / answers. / acts. / automates."
+   Driven by a vanilla JS state machine in main.js. The verb span inherits
+   cyan from the parent <em> via the global `em { color: var(--accent); }`
+   rule; the dot span overrides back to white so the period reads as
+   normal punctuation rather than part of the highlighted verb.
+
+   Note: we DON'T set `display: inline-block` + `min-width` here. At the
+   hero's clamp(40-76px) title size, even ~10ch is ~400px wide — wide
+   enough that the "that …" prefix gets bumped to its own line on most
+   viewports, since browsers can't break inside an inline-block. Better
+   to flow inline and accept a tiny per-tick width shift than have the
+   verb wrap onto a third line. */
+.hero__typewriter {
+  white-space: nowrap;
+}
+.hero__typewriter-dot {
+  /* Override the <em> ancestor's cyan so the period stays white. */
+  color: var(--fg);
+}
+.hero__caret {
+  display: inline-block;
+  margin-left: 1px;
+  font-weight: 300;
+  color: var(--accent);
+  /* steps(2) gives a hard on/off blink — softer would feel sluggish at
+     a one-second cadence. */
+  animation: caret-blink 1s steps(2) infinite;
+}
+@keyframes caret-blink {
+  50% { opacity: 0; }
+}
+
 .hero__lede {
   font-size: clamp(16px, 1.4vw, 19px);
   color: var(--fg-muted);
@@ -345,7 +378,27 @@ section { padding: var(--section-pad) 0; position: relative; }
 
 /* ---------- 5. modes (3D cards) ---------------------------------------- */
 
-.modes { background: linear-gradient(to bottom, var(--bg) 0%, var(--bg-soft) 100%); }
+/* The modes section's background gradient lives on a ::before so we can
+   fade it in independently of the cards. Without this, the gradient was
+   already painted before the user scrolled to the cards — making it feel
+   static while the cards animated in. With [data-bg-reveal], JS adds
+   data-bg-revealed when the section enters the viewport, transitioning
+   the bg layer's opacity in sync with the cards' staggered entry. */
+.modes {
+  position: relative;
+  background: transparent;
+}
+.modes::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, var(--bg) 0%, var(--bg-soft) 100%);
+  opacity: 0;
+  transition: opacity 1s var(--ease-out);
+  z-index: -1;
+  pointer-events: none;
+}
+.modes[data-bg-revealed]::before { opacity: 1; }
 
 .modes__grid {
   display: grid;
@@ -419,23 +472,64 @@ section { padding: var(--section-pad) 0; position: relative; }
   opacity: 0.8;
 }
 
-/* ---------- 6. how — sticky figure / scrolling steps ------------------- */
+/* ---------- 6. how — scrollytelling (sticky stage + 3 phases) ---------- */
 
-.how { background: var(--bg-soft); }
+/* The section itself is just a container — the real layout lives in the
+   .how__scroll-track child, which is 300vh tall (one viewport per phase)
+   to give the user scroll-room while .how__sticky-stage stays pinned. */
+.how {
+  background: var(--bg-soft);
+  padding: 0; /* override default section padding — the scroll track + sticky stage own the layout */
+}
+.how__scroll-track {
+  position: relative;
+  height: 300vh; /* 3 phases × 100vh */
+}
+.how__sticky-stage {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  /* z-index above the trigger blocks so they catch user clicks normally
+     (triggers themselves have pointer-events: none — see below). */
+  z-index: 1;
+}
+.how__sticky-stage > .container {
+  width: 100%;
+}
+.how__header {
+  text-align: center;
+  margin-bottom: clamp(32px, 5vh, 56px);
+}
 
 .how__grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: clamp(40px, 6vw, 80px);
-  align-items: start;
+  align-items: center;
 }
-.how__visual {
-  position: sticky;
-  top: 120px;
-  align-self: start;
+
+/* Triggers — invisible 100vh blocks at 0 / 100vh / 200vh inside the
+   scroll track. The IntersectionObserver in main.js fires on these and
+   sets [data-phase] on the section root. Pointer-events disabled so
+   they don't intercept clicks on the visible sticky stage above them. */
+.how__trigger {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 100vh;
+  pointer-events: none;
 }
+.how__trigger[data-how-phase="1"] { top: 0; }
+.how__trigger[data-how-phase="2"] { top: 100vh; }
+.how__trigger[data-how-phase="3"] { top: 200vh; }
+
+/* ----- Graphic frame (sticky-stage left column) ------------------------ */
+
+.how__visual { position: relative; }
 .how__frame {
-  background: linear-gradient(135deg, #1a1d26, #0f1117);
+  background: linear-gradient(135deg, #0c1a22, #051218);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 16px;
@@ -452,11 +546,14 @@ section { padding: var(--section-pad) 0; position: relative; }
   inset: 0;
   background: repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(255,255,255,0.018) 2px, rgba(255,255,255,0.018) 3px);
   pointer-events: none;
+  z-index: 1;
 }
 .how__frame-bar {
   display: flex;
   gap: 6px;
   margin-bottom: 24px;
+  position: relative;
+  z-index: 3;
 }
 .how__frame-bar span {
   width: 10px;
@@ -465,6 +562,8 @@ section { padding: var(--section-pad) 0; position: relative; }
   background: var(--bg);
   border: 1px solid var(--border-strong);
 }
+
+/* Persistent widget mock — visible across all scenes. */
 .how__widget {
   position: absolute;
   bottom: 32px;
@@ -475,8 +574,8 @@ section { padding: var(--section-pad) 0; position: relative; }
   border-radius: 12px;
   padding: 14px 16px;
   box-shadow: var(--shadow-card), 0 0 40px -10px rgba(34, 227, 255, 0.6);
-  /* Subtle float animation */
   animation: widget-float 5s ease-in-out infinite;
+  z-index: 4;
 }
 @keyframes widget-float {
   0%, 100% { transform: translateY(0); }
@@ -495,8 +594,6 @@ section { padding: var(--section-pad) 0; position: relative; }
   height: 3px;
   background: linear-gradient(90deg, var(--accent), transparent);
   border-radius: 2px;
-  /* transform-origin lives on the element, NOT inside @keyframes — putting
-     it inside a keyframes block was a CSS syntax error caught at build. */
   transform-origin: left;
   animation: pulse-bar 2s ease-in-out infinite;
 }
@@ -511,24 +608,238 @@ section { padding: var(--section-pad) 0; position: relative; }
 }
 .how__widget-line--short { width: 60%; }
 
-.how__step { padding: 32px 0; border-top: 1px solid var(--border); }
-.how__step:first-child { padding-top: 0; border-top: none; }
-.how__step-num {
-  display: inline-block;
-  width: 32px;
-  height: 32px;
-  line-height: 32px;
-  text-align: center;
-  border-radius: 50%;
-  background: var(--bg-elev);
-  border: 1px solid var(--accent);
-  color: var(--accent);
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 14px;
-  margin-bottom: 16px;
+/* ----- Scene layers — crossfade controlled by [data-phase] ------------- */
+
+.how__scene {
+  position: absolute;
+  inset: 16px; /* matches frame padding */
+  opacity: 0;
+  transition: opacity 0.6s var(--ease-out);
+  z-index: 2;
+  pointer-events: none;
 }
-.how__step h3 { font-size: 22px; margin-bottom: 10px; }
-.how__step p { color: var(--fg-muted); font-size: 15px; line-height: 1.65; }
+.how[data-phase="1"] .how__scene--sees { opacity: 1; }
+.how[data-phase="2"] .how__scene--does { opacity: 1; }
+.how[data-phase="3"] .how__scene--works { opacity: 1; }
+
+/* Scene 1 — Ask: a faint grid + a scan line sweeping vertically. */
+.how__scan-grid {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(rgba(34, 227, 255, 0.05) 1px, transparent 1px) 0 0 / 100% 24px,
+    linear-gradient(90deg, rgba(34, 227, 255, 0.05) 1px, transparent 1px) 0 0 / 24px 100%;
+  mask-image: radial-gradient(ellipse at center, rgba(0,0,0,1) 30%, rgba(0,0,0,0) 75%);
+  -webkit-mask-image: radial-gradient(ellipse at center, rgba(0,0,0,1) 30%, rgba(0,0,0,0) 75%);
+}
+.how__scan-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 60px;
+  background: linear-gradient(to bottom, transparent, rgba(34, 227, 255, 0.18), transparent);
+  animation: scan 3s ease-in-out infinite;
+}
+@keyframes scan {
+  0%   { top: -60px; opacity: 0; }
+  20%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+
+/* Scene 2 — Access: a cursor wandering with click rings. */
+.how__cursor {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  color: var(--fg);
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+  animation: cursor-path 6s ease-in-out infinite;
+}
+.how__cursor svg {
+  width: 100%;
+  height: 100%;
+  stroke: var(--bg);
+  stroke-width: 1.5;
+  paint-order: stroke fill;
+}
+@keyframes cursor-path {
+  0%   { left: 18%; top: 28%; }
+  25%  { left: 62%; top: 22%; }
+  50%  { left: 70%; top: 60%; }
+  75%  { left: 25%; top: 64%; }
+  100% { left: 18%; top: 28%; }
+}
+.how__click-ring {
+  position: absolute;
+  top: 14px; left: 4px;
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  opacity: 0;
+  animation: click-ring 6s ease-in-out infinite;
+}
+.how__click-ring--delayed { animation-delay: 3s; }
+@keyframes click-ring {
+  0%, 19%   { opacity: 0; transform: scale(0.4); }
+  20%       { opacity: 0.9; transform: scale(0.4); }
+  35%       { opacity: 0; transform: scale(2.2); }
+  100%      { opacity: 0; transform: scale(2.2); }
+}
+
+/* Scene 3 — Automate: REC dot (top-right corner) + a stack of "recorded
+   step" rows. Top-right places it near the widget mock without
+   overlapping it, mirrors the way real screen-record apps badge the
+   recording state in their own toolbars. */
+.how__rec {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(244, 80, 80, 0.1);
+  border: 1px solid rgba(244, 80, 80, 0.5);
+  border-radius: 99px;
+  color: #f47878;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
+.how__rec-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f47878;
+  animation: rec-pulse 1.4s ease-in-out infinite;
+}
+@keyframes rec-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(244, 120, 120, 0.5); }
+  50%      { opacity: 0.6; box-shadow: 0 0 0 6px rgba(244, 120, 120, 0); }
+}
+.how__steps-stack {
+  position: absolute;
+  top: 50%;
+  left: 16px;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 50%;
+}
+.how__step-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  opacity: 0;
+  animation: step-appear 4s ease-in-out infinite;
+}
+.how__step-row:nth-child(1) { animation-delay: 0s; }
+.how__step-row:nth-child(2) { animation-delay: 0.5s; }
+.how__step-row:nth-child(3) { animation-delay: 1s; }
+@keyframes step-appear {
+  0%, 70%   { opacity: 0; transform: translateX(-8px); }
+  20%       { opacity: 1; transform: translateX(0); }
+  60%       { opacity: 1; transform: translateX(0); }
+  100%      { opacity: 0; transform: translateX(-8px); }
+}
+.how__step-row span {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--accent);
+  width: 18px;
+}
+.how__step-bar {
+  flex: 1;
+  height: 5px;
+  background: linear-gradient(90deg, var(--accent), transparent);
+  border-radius: 2px;
+}
+.how__step-bar--short { max-width: 60%; }
+.how__step-bar--mid { max-width: 80%; }
+
+/* ----- Text panels — layered, crossfade by phase ----------------------- */
+
+.how__text {
+  position: relative;
+  /* Min-height keeps the layered (absolute) panels' container sized so
+     the grid row doesn't collapse. Tuned to fit the longest panel. */
+  min-height: 280px;
+}
+.how__panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.6s var(--ease-out), transform 0.6s var(--ease-out);
+  pointer-events: none;
+}
+.how[data-phase="1"] .how__panel[data-how-phase="1"],
+.how[data-phase="2"] .how__panel[data-how-phase="2"],
+.how[data-phase="3"] .how__panel[data-how-phase="3"] {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+.how__panel-eyebrow {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  color: var(--accent);
+  margin-bottom: 14px;
+  text-transform: uppercase;
+}
+.how__panel .section-title {
+  margin-bottom: 18px;
+  /* Slightly tighter than the global section-title so each phase reads
+     as one strong statement rather than a "section heading". */
+  font-size: clamp(28px, 3.4vw, 40px);
+  text-align: left;
+}
+.how__panel-body {
+  font-size: clamp(15px, 1.3vw, 17px);
+  color: var(--fg-muted);
+  line-height: 1.65;
+  max-width: 540px;
+  margin-bottom: 22px;
+}
+
+/* Chevron bullets under each phase's body copy. The marker is a single
+   "›" character via ::before so we don't ship an icon font or SVGs for
+   such a small flourish; coloured cyan to anchor the list to the rest
+   of the accent system. */
+.how__panel-bullets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 540px;
+}
+.how__panel-bullets li {
+  position: relative;
+  padding-left: 22px;
+  font-size: 14px;
+  color: var(--fg-muted);
+  line-height: 1.5;
+}
+.how__panel-bullets li::before {
+  content: '›';
+  position: absolute;
+  left: 4px;
+  top: -2px;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 18px;
+  line-height: 1.2;
+}
 
 /* ---------- 7. privacy grid -------------------------------------------- */
 
@@ -566,7 +877,24 @@ section { padding: var(--section-pad) 0; position: relative; }
 
 /* ---------- 8. pricing ------------------------------------------------- */
 
-.pricing { background: var(--bg); }
+/* Same fade-in-on-reveal pattern as .modes — pricing is the other
+   section dominated by feature cards, so its gradient should arrive
+   with them rather than being already-painted. */
+.pricing {
+  position: relative;
+  background: transparent;
+}
+.pricing::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, var(--bg-soft) 0%, var(--bg) 100%);
+  opacity: 0;
+  transition: opacity 1s var(--ease-out);
+  z-index: -1;
+  pointer-events: none;
+}
+.pricing[data-bg-revealed]::before { opacity: 1; }
 
 .pricing__grid {
   display: grid;
@@ -682,17 +1010,43 @@ section { padding: var(--section-pad) 0; position: relative; }
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 24px 20px;
-  text-align: left;
-  transition: transform 0.2s var(--ease-out), border-color 0.2s var(--ease-out);
+  padding: 36px 24px 28px;
+  text-align: center;
+  transition: transform 0.2s var(--ease-out), border-color 0.2s var(--ease-out), background 0.2s var(--ease-out);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  gap: 14px;
+  color: var(--fg);
 }
-.platform-card:hover { transform: translateY(-2px); border-color: var(--accent); }
-.platform-card__os { font-size: 18px; font-weight: 600; }
-.platform-card__detail { font-size: 13px; color: var(--fg-muted); }
-.platform-card__cta { font-size: 13px; color: var(--accent); margin-top: 8px; font-weight: 500; }
+.platform-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--accent);
+  background: linear-gradient(180deg, rgba(34, 227, 255, 0.04), var(--bg-elev) 60%);
+}
+.platform-card__logo {
+  width: 56px;
+  height: 56px;
+  color: var(--fg);
+  /* Subtle drop-shadow gives the logo a hint of depth against the card
+     surface without competing with the cyan accent on hover. */
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.3));
+  transition: color 0.2s var(--ease-out);
+}
+.platform-card:hover .platform-card__logo {
+  color: var(--accent);
+}
+.platform-card__os {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.platform-card__cta {
+  font-size: 14px;
+  color: var(--accent);
+  font-weight: 500;
+  margin-top: 4px;
+}
 .get-access__contact {
   font-size: 14px;
   color: var(--fg-muted);
@@ -771,9 +1125,40 @@ section { padding: var(--section-pad) 0; position: relative; }
     grid-template-columns: 1fr;
   }
   .privacy__grid { gap: 1px; }
-  .how__grid { grid-template-columns: 1fr; gap: 32px; }
-  .how__visual { position: relative; top: 0; }
   .hero__copy { padding-bottom: 100px; }
+
+  /* Scrollytelling collapses on narrow viewports — there's no horizontal
+     room for graphic + text side-by-side, and the 300vh sticky pattern
+     feels broken on touch devices that don't have predictable scroll
+     wheel velocity. Fall back to a flat layout: section becomes its
+     normal height, all 3 phases stack vertically with their own visuals,
+     panels fade in via the standard [data-reveal] observer. */
+  .how { padding: var(--section-pad) 0; }
+  .how__scroll-track { height: auto; }
+  .how__sticky-stage {
+    position: relative;
+    height: auto;
+    display: block;
+  }
+  .how__grid { grid-template-columns: 1fr; gap: 40px; }
+  .how__text { min-height: auto; }
+  .how__panel {
+    position: relative;
+    inset: auto;
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+    padding: 32px 0;
+    border-top: 1px solid var(--border);
+  }
+  .how__panel:first-child { border-top: none; padding-top: 0; }
+  /* Hide the trigger blocks; they're not needed in the stacked layout. */
+  .how__trigger { display: none; }
+  /* All scenes visible — let them all sit in the frame; small screens
+     don't get the crossfade. (Could fade based on data-reveal on each
+     panel later if it becomes worth the complexity.) */
+  .how__scene { opacity: 1; position: relative; inset: auto; height: 0; overflow: hidden; }
+  .how__scene--sees { opacity: 1; height: auto; }
 }
 
 @media (max-width: 600px) {
@@ -783,3 +1168,221 @@ section { padding: var(--section-pad) 0; position: relative; }
   .mode-card, .plan-card { padding: 28px 24px; }
   .footer__inner { flex-direction: column; align-items: flex-start; }
 }
+
+/* ============================================================================
+   12. Contact modal + form
+   Triggered by [data-open-contact]; closed by [data-close-contact],
+   the backdrop, or Escape. Form POSTs to the existing submitFeedback
+   Cloud Function (same one the desktop app uses) so all support
+   messages land in one inbox.
+   ============================================================================ */
+
+/* Inline link-style button — used in the body where we need a button
+   that visually reads as a hyperlink (mailto-replacement). */
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: none;
+  border-bottom: 1px dotted var(--accent);
+  line-height: 1.2;
+}
+.link-button:hover { color: var(--fg); border-bottom-color: var(--fg); }
+.link-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
+.contact-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.contact-modal[hidden] { display: none; }
+
+.contact-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(1, 6, 9, 0.78);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: contact-fade-in 0.25s var(--ease-out);
+}
+@keyframes contact-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.contact-modal__panel {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: 36px clamp(24px, 4vw, 40px);
+  box-shadow: var(--shadow-card), 0 0 0 1px rgba(34, 227, 255, 0.1);
+  animation: contact-rise-in 0.3s var(--ease-out);
+}
+@keyframes contact-rise-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.contact-modal__close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s var(--ease-out), color 0.15s var(--ease-out);
+}
+.contact-modal__close:hover { color: var(--fg); background: rgba(255,255,255,0.06); }
+.contact-modal__close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.contact-modal__title {
+  font-size: 22px;
+  margin-bottom: 8px;
+  letter-spacing: -0.01em;
+}
+.contact-modal__lede {
+  font-size: 14px;
+  color: var(--fg-muted);
+  margin-bottom: 24px;
+  line-height: 1.55;
+}
+
+.contact-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Off-screen positioning (not display:none) — bots are more likely to
+   fill an "invisible-but-present" input than one Chrome's fill heuristic
+   skips entirely. Real users with screen readers also bypass via
+   aria-hidden + tabindex=-1 on the parent. */
+.contact-form__honeypot {
+  position: absolute;
+  left: -10000px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.contact-form__row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.contact-form__label {
+  font-size: 12px;
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+.contact-form__label em {
+  font-style: normal;
+  color: var(--fg-dim);
+  font-weight: 400;
+  /* override the global em { color: var(--accent); } in this context — em
+     here is "(optional)" hint, shouldn't read as accent text */
+}
+.contact-form__input {
+  font: inherit;
+  font-size: 14px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  transition: border-color 0.15s var(--ease-out);
+}
+.contact-form__input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.contact-form__textarea {
+  resize: vertical;
+  min-height: 100px;
+  line-height: 1.5;
+  font-family: inherit;
+}
+.contact-form__counter {
+  font-size: 11px;
+  color: var(--fg-dim);
+  align-self: flex-end;
+  margin-top: 2px;
+}
+
+.contact-form__error {
+  padding: 10px 12px;
+  background: rgba(244, 80, 80, 0.08);
+  border: 1px solid rgba(244, 80, 80, 0.4);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: #f47878;
+  line-height: 1.45;
+}
+
+.contact-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+.contact-form__actions .btn {
+  padding: 10px 20px;
+  font-size: 13px;
+}
+
+/* Sent confirmation — same panel, swapped content. */
+.contact-form__sent {
+  text-align: center;
+  padding: 20px 0;
+}
+.contact-form__sent-mark {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 16px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+  color: var(--bg);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 700;
+}
+.contact-form__sent h3 { font-size: 20px; margin-bottom: 8px; }
+.contact-form__sent p {
+  color: var(--fg-muted);
+  font-size: 14px;
+  line-height: 1.5;
+  margin-bottom: 24px;
+}
+
+/* Body class added by JS while the modal is open — locks scroll so the
+   page doesn't jump when the modal mounts. */
+body.contact-modal-open { overflow: hidden; }
