@@ -45,18 +45,25 @@
        HERO — full-bleed looping video, dark gradient, bottom-left text
        ===================================================================== -->
   <section id="hero" class="hero">
+    <!--
+      Hero video is LAZY-MOUNTED by main.js (see setupHeroVideo).
+      No <source> here on purpose — the browser would otherwise begin
+      fetching the moov atom on parse, which we want to gate behind
+      the Save-Data / connection / IntersectionObserver checks. The
+      URL the JS will inject is imported via Vite's `?url` so the
+      build hashes the file (cacheable forever, see firebase.json).
+      The poster is shown until JS mounts the source (or forever, for
+      users on data-saver / 2g where we never mount it at all).
+    -->
     <video
       class="hero__video"
-      autoplay
       muted
       loop
       playsinline
-      preload="metadata"
-      poster="/assets/hero-poster.jpg"
+      preload="none"
+      poster="/hero-poster.jpg"
       aria-hidden="true"
-    >
-      <source src="/assets/hero.mp4" type="video/mp4" />
-    </video>
+    ></video>
     <div class="hero__overlay" aria-hidden="true"></div>
     <div class="hero__copy">
       <p class="hero__eyebrow" data-anim="hero-eyebrow">Desktop AI assistant</p>

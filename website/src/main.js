@@ -15,6 +15,12 @@
 
 import { animate, stagger } from 'animejs';
 
+// `?url` makes Vite emit the file as a hashed asset and return its
+// public URL string. This is what gives us `dist/assets/hero-[hash].mp4`
+// (immutable-cacheable forever) without a `<source>` tag in the HTML
+// that would trigger eager fetching on parse.
+import heroVideoUrl from '../assets/hero.mp4?url';
+
 // Bail out of orchestration if the user prefers reduced motion. The
 // stylesheet has matching @media handling so the visual fallback already
 // works; this just stops us spinning timers and observers.
@@ -451,24 +457,94 @@ function setupPriceCounters() {
 }
 
 // ----------------------------------------------------------------------------
-// Video autoplay — Safari + a few other browsers refuse to autoplay videos
-// with sound or in low-power mode. We listen for the failure and quietly
-// fall back to a static frame (already in the poster attribute).
+// Hero video — lazy-mount with Save-Data / slow-connection bypass.
+//
+// The <video> element ships WITHOUT a <source> child. We attach the
+// source dynamically only when:
+//   1. The user isn't on data-saver mode (`navigator.connection.saveData`)
+//   2. The connection effective type is faster than 2g
+//   3. The hero is in or near the viewport (IntersectionObserver)
+//   4. The user hasn't requested reduced motion
+//
+// Users who fail those checks see the poster only — they never trigger
+// the video download, which is the largest bandwidth lever on the page.
+// On Firebase Hosting at $0.15/GB egress, a typical bouncing-mobile
+// visitor would have cost the same as an engaged desktop visitor; this
+// gate stops that cost from being incurred at all.
+//
+// Autoplay quirks: even with the source mounted, Safari Low Power and
+// some restrictive UAs will reject the play() promise. We catch and
+// hide the element so the poster + dark gradient stand alone.
 // ----------------------------------------------------------------------------
 
-function setupHeroVideoFallback() {
+function setupHeroVideo() {
   const video = document.querySelector('.hero__video');
   if (!video) return;
 
-  // playsinline, muted, autoplay should cover most browsers. If the play
-  // promise rejects (Low Power, restrictive UA), we just leave the poster
-  // visible. Don't surface an error.
-  const promise = video.play();
-  if (promise && typeof promise.catch === 'function') {
-    promise.catch(() => {
-      // Hide the broken-state video element so the dark gradient stands alone.
-      video.style.display = 'none';
-    });
+  // Hashed URL injected by Vite's `?url` import. Empty string would
+  // mean the asset import failed at build — bail rather than mount a
+  // broken source.
+  const src = heroVideoUrl;
+  const type = 'video/mp4';
+  if (!src) return;
+
+  // ---- Bypass conditions: don't even fetch the file --------------------
+  // navigator.connection is only on Chromium-based browsers. Treat
+  // missing as "fast connection" — we don't want to penalise Safari /
+  // Firefox users who happen to lack the API.
+  const conn = navigator.connection ?? navigator.webkitConnection ?? null;
+  const saveData = conn?.saveData === true;
+  const slowConnection =
+    conn?.effectiveType === 'slow-2g' || conn?.effectiveType === '2g';
+  const reducedMotion =
+    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+
+  if (saveData || slowConnection || reducedMotion) {
+    // Leave the poster up. Nothing to mount, nothing to play.
+    return;
+  }
+
+  // ---- Lazy-mount via IntersectionObserver -----------------------------
+  // Hero is above the fold so this nearly always fires immediately, but
+  // the observer also catches edge cases (deeplinks to mid-page anchors,
+  // browsers that race the JS init before layout).
+  const mount = () => {
+    if (video.dataset.mounted === '1') return;
+    video.dataset.mounted = '1';
+
+    const source = document.createElement('source');
+    source.src = src;
+    source.type = type;
+    video.appendChild(source);
+    video.load();
+
+    const playPromise = video.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch(() => {
+        // Restrictive UA (Safari Low Power, some embedded browsers).
+        // Hide the busted video, keep the dark gradient.
+        video.style.display = 'none';
+      });
+    }
+  };
+
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver(
+      (entries, observer) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            mount();
+            observer.disconnect();
+            return;
+          }
+        }
+      },
+      { rootMargin: '200px' }, // start fetching slightly before in-view
+    );
+    io.observe(video);
+  } else {
+    // Fallback for ancient browsers — just mount synchronously.
+    mount();
   }
 }
 
@@ -677,7 +753,7 @@ function setupContactModal() {
 }
 
 function boot() {
-  setupHeroVideoFallback();
+  setupHeroVideo();
   animateHero();
   setupHeroTypewriter();
   setupSectionBgReveal();

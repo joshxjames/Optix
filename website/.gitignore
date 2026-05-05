@@ -3,8 +3,10 @@ dist
 .vite
 *.log
 
-# Hero video — currently 154 MB, exceeds GitHub's 100 MB single-file limit.
-# Lives locally in /website/assets/hero.mp4 and is uploaded directly to
-# Firebase Hosting at deploy time. If we ever want to track it in git,
-# either compress first (target <5 MB for web) or set up Git LFS.
-assets/hero.mp4
+# Hero video master (the 146 MB pre-compression source). The served
+# file `assets/hero.mp4` is now ~320 KB (compressed by
+# `scripts/compress-hero.mjs`) and is tracked in git so deploys are
+# reproducible. Master stays ignored — re-run the compress script
+# locally if you want to re-encode with different settings.
+assets/hero.original.mp4
+assets/hero.webm

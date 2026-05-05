@@ -1,0 +1,56 @@
+{
+  "//": "Firebase Hosting config for the marketing site. Vite builds to dist/, so that's the public dir. The headers are the bandwidth lever — Vite emits hashed filenames (e.g. main-DM47416X.css), which means the file at a given path never changes content. Marking those immutable lets every returning visitor hit their disk cache instead of our $0.15/GB egress.",
+  "hosting": {
+    "public": "dist",
+    "cleanUrls": true,
+    "trailingSlash": false,
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [],
+    "headers": [
+      {
+        "//": "Hashed bundles + the hero video — content is content-addressed by filename, so cache forever. `immutable` tells the browser to skip even the conditional-revalidation request.",
+        "source": "**/assets/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      },
+      {
+        "//": "Hero video specifically — same immutable treatment whether it lives under /assets/ (Vite-hashed) or /assets/hero.mp4 (direct reference). Belt-and-braces in case the build ever inlines references differently.",
+        "source": "**/*.@(mp4|webm)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      },
+      {
+        "//": "HTML entry points — must NOT be cached aggressively, or visitors keep loading old asset references after a deploy. `no-cache` here means the browser revalidates every time but can still serve stale on a 304.",
+        "source": "**/*.@(html)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=0, must-revalidate"
+          }
+        ]
+      },
+      {
+        "//": "Poster image and other root-level static assets — moderate cache since the filenames aren't hashed. One day is plenty for a marketing-site poster.",
+        "source": "**/*.@(jpg|jpeg|png|gif|svg|webp|avif|ico)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=86400"
+          }
+        ]
+      }
+    ]
+  }
+}
