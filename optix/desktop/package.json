@@ -15,7 +15,7 @@
     "cost-report": "node scripts/cost-report.mjs"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.32.1",
+    "@anthropic-ai/sdk": "^0.92.0",
     "@google/generative-ai": "^0.21.0",
     "@hurdlegroup/robotjs": "^0.12.3",
     "electron-store": "^10.0.0",
