@@ -6,8 +6,16 @@ const SUPPORT_EMAIL = 'admin@covetable.com.au';
 
 // App version — injected at build time from `optix/desktop/package.json`
 // via electron-vite's `define` config (see `electron.vite.config.ts`).
-// Always accurate after every release without a hand-maintained const.
-const APP_VERSION: string = __APP_VERSION__;
+//
+// Defensive `typeof` access: in dev mode the `define` substitution
+// sometimes doesn't propagate (e.g. when Vite's pre-bundled cache is
+// stale), which would otherwise throw a ReferenceError at module load
+// and cascade into the React tree as a render failure. `typeof` is
+// special-cased to NOT throw on undeclared identifiers — it just
+// returns 'undefined'. Production builds substitute the literal so
+// the fallback path is never taken there.
+const APP_VERSION: string =
+  typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
 
 type Category =
   | 'Bug report'
