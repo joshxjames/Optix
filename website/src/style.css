@@ -705,7 +705,10 @@ section { padding: var(--section-pad) 0; position: relative; }
   right: 0;
   height: 60px;
   background: linear-gradient(to bottom, transparent, rgba(34, 227, 255, 0.18), transparent);
-  animation: scan 3s ease-in-out infinite;
+  /* Slow, contemplative sweep — the cards + target reticle below are
+     all driven by the same 7s timeline (via keyframe percentages),
+     so changing this single duration retunes the whole sequence. */
+  animation: scan 7s ease-in-out infinite;
   /* Keep the scan-line above the feature cards so it visually
      "passes over" them rather than under. */
   z-index: 2;
@@ -745,7 +748,9 @@ section { padding: var(--section-pad) 0; position: relative; }
      scan-line reaches its vertical position — no JS needed. */
   opacity: 0;
   transform: translateY(6px);
-  animation-duration: 3s;
+  /* Matches the scan-line duration so the reveal keyframes (below)
+     stay sync'd to the bar's vertical position. */
+  animation-duration: 7s;
   animation-timing-function: ease-in-out;
   animation-iteration-count: infinite;
   box-sizing: border-box;
@@ -820,8 +825,9 @@ section { padding: var(--section-pad) 0; position: relative; }
   opacity: 0;
   /* Reticle appears late in the cycle, after all 3 cards are revealed.
      It scales down slightly during the lock-on, mimicking a camera
-     autofocus snapping to its target. */
-  animation: target-lock 3s ease-in-out infinite;
+     autofocus snapping to its target. Matches scan-line + cards
+     duration so all four animations share one timeline. */
+  animation: target-lock 7s ease-in-out infinite;
   z-index: 3;
 }
 @keyframes target-lock {
