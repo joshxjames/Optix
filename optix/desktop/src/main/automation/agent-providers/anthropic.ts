@@ -4,6 +4,8 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { app } from 'electron';
+import { statSync } from 'node:fs';
+import path from 'node:path';
 import {
   AskUserActionSchema,
   ComputerToolActionSchema,
@@ -25,6 +27,19 @@ import type {
 
 const COMPUTER_BETA = 'computer-use-2025-11-24';
 
+// History-truncation policy — must match the legacy duck-typed
+// behaviour in computer-loop.ts:71-72 (KEEP_FIRST_TURNS / KEEP_LAST_TURNS).
+// Kept in sync until the loop driver migrates to the formal
+// `truncateHistory` interface method (see types.ts TODO).
+const KEEP_FIRST_TURNS = 2;
+const KEEP_LAST_TURNS = 20;
+
+// Anthropic image limits — rejects screenshots exceeding either bound.
+// We pre-validate so a too-large screenshot degrades to a text fallback
+// rather than hard-failing the turn.
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB on the wire (post-base64)
+const MAX_IMAGE_DIM_PX = 8000;
+
 // Exported so the Optix Cloud adapter can build the same internal
 // state shape and just swap the SDK client for one that talks to our
 // Firebase relay.
@@ -44,6 +59,13 @@ export type AnthropicState = {
   /** tool_use ids that failed input validation; we synthesise an
    *  is_error tool_result for each so the model can self-correct. */
   pendingErrors: Map<string, string>;
+  /** Cached active-plan snapshot. The plan can be 50KB+ and reading +
+   *  re-serialising it on every step is wasteful when the user hasn't
+   *  changed it. Cache it keyed by the plan file's mtime; re-read only
+   *  when mtime changes. `mtimeMs === null` means we last observed no
+   *  plan file. `content === null` paired with a numeric mtime means
+   *  the file existed but parsed to nothing (corrupt JSON). */
+  planCache: { mtimeMs: number | null; content: string | null };
 };
 
 // ---------------------------------------------------------------------------
@@ -72,7 +94,41 @@ function getKnownFolders(): Record<string, string> {
   return out;
 }
 
-function buildSystemPrompt(workspaceFolder: string | null): string {
+/** Read the plan only when its on-disk mtime has changed since the
+ *  last call for this state. Returns the cached content otherwise.
+ *  A 50KB plan re-read every step adds up across long conversations;
+ *  this collapses it to one cheap stat() per turn. */
+function getCachedPlanContent(state: AnthropicState): string | null {
+  let mtimeMs: number | null = null;
+  try {
+    const planPath = path.join(app.getPath('userData'), 'plans', 'current.json');
+    mtimeMs = statSync(planPath).mtimeMs;
+  } catch {
+    // No plan file (or unreadable) — drop any cached content.
+    if (state.planCache.mtimeMs !== null || state.planCache.content !== null) {
+      state.planCache = { mtimeMs: null, content: null };
+    }
+    return null;
+  }
+  if (mtimeMs === state.planCache.mtimeMs) {
+    return state.planCache.content;
+  }
+  const plan = readPlanSync();
+  let rendered: string | null = null;
+  if (plan) {
+    const revisedNote = plan.updatedAt !== plan.createdAt ? '; revised since then' : '';
+    rendered =
+      `\n---\nActive plan (you set this previously and the user approved it${revisedNote}):\n\n${plan.content}\n\n` +
+      'Continue executing this plan. The user already has it pinned in their UI — you do NOT need to re-screenshot the screen, re-list directories, or call any tool just to "read" or "describe" the plan. If the user asks what the plan is, answer directly from the text above. Only call `plan` again if scope genuinely changes.';
+  }
+  state.planCache = { mtimeMs, content: rendered };
+  return rendered;
+}
+
+function buildSystemPrompt(
+  workspaceFolder: string | null,
+  cachedPlanBlock: string | null,
+): string {
   const lines = [
     "You are Optix, an AI assistant that performs tasks on the user's computer.",
     '',
@@ -111,23 +167,19 @@ function buildSystemPrompt(workspaceFolder: string | null): string {
   }
   if (workspaceFolder) {
     lines.push('');
+    // JSON-encode the path so backticks/newlines/quotes in a malicious or
+    // unusual workspace path can't break out of the markdown code span
+    // and corrupt the rest of the prompt. JSON.stringify wraps in double
+    // quotes and escapes `\n`, `"`, and control chars — the prompt
+    // becomes `Workspace: "C:\\path\\with\\\"quotes\\\""`, which is
+    // unambiguous to the model and can't inject into surrounding text.
     lines.push(
-      `Workspace: \`${workspaceFolder}\`. Stay inside this folder for file-system actions whenever possible. Any file action targeting a path outside this folder will be paused for explicit user approval — regardless of the user's other approval settings — so plan accordingly and only step outside when the task genuinely requires it.`,
+      `Workspace: ${JSON.stringify(workspaceFolder)}. Stay inside this folder for file-system actions whenever possible. Any file action targeting a path outside this folder will be paused for explicit user approval — regardless of the user's other approval settings — so plan accordingly and only step outside when the task genuinely requires it.`,
     );
   }
-  const plan = readPlanSync();
-  if (plan) {
+  if (cachedPlanBlock) {
     lines.push('');
-    lines.push('---');
-    lines.push(
-      `Active plan (you set this previously and the user approved it${plan.updatedAt !== plan.createdAt ? '; revised since then' : ''}):`,
-    );
-    lines.push('');
-    lines.push(plan.content);
-    lines.push('');
-    lines.push(
-      'Continue executing this plan. The user already has it pinned in their UI — you do NOT need to re-screenshot the screen, re-list directories, or call any tool just to "read" or "describe" the plan. If the user asks what the plan is, answer directly from the text above. Only call `plan` again if scope genuinely changes.',
-    );
+    lines.push(cachedPlanBlock);
   }
   return lines.join('\n');
 }
@@ -413,27 +465,119 @@ function bytesToImageBlock(
   };
 }
 
-/** Place a `cache_control: { type: 'ephemeral' }` marker on the last block
- *  of the most recent user message. Each turn we move this marker forward
- *  so the entire conversation prefix gets cached on subsequent requests. */
+/** Read PNG / JPEG dimensions from the first few header bytes without
+ *  pulling in a full decoder. Returns `null` if the format isn't
+ *  recognised — caller treats that as "skip the dim check, still
+ *  enforce byte length". This is intentionally minimal: Optix only
+ *  ever ships PNG screenshots from the renderer; the JPEG branch is
+ *  defensive against future format changes. */
+function readImageDims(bytes: Uint8Array): { width: number; height: number } | null {
+  // PNG signature: 89 50 4E 47 0D 0A 1A 0A, then IHDR width/height at
+  // offsets 16 (width) and 20 (height) as big-endian uint32.
+  if (
+    bytes.length >= 24 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47
+  ) {
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    return { width: dv.getUint32(16, false), height: dv.getUint32(20, false) };
+  }
+  // JPEG: walk segments until SOF0/SOF2 marker (0xFFC0..0xFFC3, C5..C7,
+  // C9..CB, CD..CF). Bail at first SOI mismatch.
+  if (bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+    let i = 2;
+    while (i + 9 < bytes.length) {
+      if (bytes[i] !== 0xff) return null;
+      const marker = bytes[i + 1];
+      if (marker === undefined) return null;
+      if (
+        (marker >= 0xc0 && marker <= 0xc3) ||
+        (marker >= 0xc5 && marker <= 0xc7) ||
+        (marker >= 0xc9 && marker <= 0xcb) ||
+        (marker >= 0xcd && marker <= 0xcf)
+      ) {
+        const height = (bytes[i + 5]! << 8) | bytes[i + 6]!;
+        const width = (bytes[i + 7]! << 8) | bytes[i + 8]!;
+        return { width, height };
+      }
+      const segLen = (bytes[i + 2]! << 8) | bytes[i + 3]!;
+      if (segLen < 2) return null;
+      i += 2 + segLen;
+    }
+  }
+  return null;
+}
+
+/** Pre-validate a screenshot against Anthropic's hard limits (5 MB on
+ *  the wire post-base64, 8000 px on either axis). Returns either a
+ *  ready-to-use image block, or a one-line reason string the caller
+ *  can surface as a text-only tool_result so the loop survives.
+ *  We deliberately do NOT downscale — that's the renderer's job; this
+ *  is just graceful degradation when the renderer hands us something
+ *  oversized (extremely large external monitors, mis-configured DPI). */
+function tryImageBlockOrReason(
+  bytes: Uint8Array,
+  mimeType: string,
+):
+  | { ok: true; block: Anthropic.Messages.ImageBlockParam }
+  | { ok: false; reason: string } {
+  const dims = readImageDims(bytes);
+  if (dims && (dims.width > MAX_IMAGE_DIM_PX || dims.height > MAX_IMAGE_DIM_PX)) {
+    return {
+      ok: false,
+      reason: `screenshot too large to send (${dims.width}x${dims.height} px, Anthropic max ${MAX_IMAGE_DIM_PX}px on either axis)`,
+    };
+  }
+  // base64 inflates by 4/3; check post-encoding byte length.
+  const approxB64Len = Math.ceil(bytes.byteLength / 3) * 4;
+  if (approxB64Len > MAX_IMAGE_BYTES) {
+    return {
+      ok: false,
+      reason: `screenshot too large to send (${(approxB64Len / 1024 / 1024).toFixed(2)} MB after base64, Anthropic max 5 MB)`,
+    };
+  }
+  return { ok: true, block: bytesToImageBlock(bytes, mimeType) };
+}
+
+/** Place a `cache_control: { type: 'ephemeral' }` marker on the last
+ *  block of the LAST STABLE user message — i.e. the most recent user
+ *  message whose contents won't change on the next turn. Marking the
+ *  most-recent-user-message-period would attach the marker to the
+ *  tool_results block we're about to generate, which churns the cache
+ *  every turn (each new tool_result becomes a fresh cache entry).
+ *
+ *  Anthropic semantics: a `cache_control` marker says "everything up to
+ *  and including this block is cacheable". So we want the marker on
+ *  the LATEST block whose prefix is stable across the whole loop —
+ *  ideally the message just before the most recent user message. For
+ *  short conversations we still cache from the system prompt (handled
+ *  separately in `step()`); this function only matters once we have
+ *  enough history to justify a second cache point. */
 function withMessageCachePoint(
   messages: Anthropic.Messages.MessageParam[],
 ): Anthropic.Messages.MessageParam[] {
-  if (messages.length === 0) return messages;
+  if (messages.length < 3) return messages;
+  // Skip the LAST user message (its content was generated this turn or
+  // is about to change next turn) and find the prior user message —
+  // that one's contents are now frozen for the rest of the loop.
   let lastUserIdx = -1;
+  let stableUserIdx = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
-    // `noUncheckedIndexedAccess` widens the indexed type to undefined,
-    // but we know `i` is in range here. Bind to a local so the role
-    // narrowing applies cleanly.
     const m = messages[i];
     if (m && m.role === 'user') {
-      lastUserIdx = i;
-      break;
+      if (lastUserIdx === -1) {
+        lastUserIdx = i;
+      } else {
+        stableUserIdx = i;
+        break;
+      }
     }
   }
-  if (lastUserIdx === -1) return messages;
+  if (stableUserIdx === -1) return messages;
   return messages.map((m, i) => {
-    if (i !== lastUserIdx) return m;
+    if (i !== stableUserIdx) return m;
     if (typeof m.content === 'string') {
       return {
         role: m.role,
@@ -462,9 +606,24 @@ export const anthropicAgentAdapter: AgentProviderAdapter<AnthropicState> = {
   init(opts: AgentInitOpts): AnthropicState {
     const userContent: Array<
       Anthropic.Messages.TextBlockParam | Anthropic.Messages.ImageBlockParam
-    > = [bytesToImageBlock(opts.imageBytes, opts.imageMimeType)];
+    > = [];
+    // Pre-validate the initial screenshot — graceful degrade rather than
+    // hard-fail if the renderer hands us something oversized.
+    const initImg = tryImageBlockOrReason(opts.imageBytes, opts.imageMimeType);
+    if (initImg.ok) {
+      userContent.push(initImg.block);
+    } else {
+      console.warn(`[optix-anthropic-cu] init: ${initImg.reason}`);
+      userContent.push({ type: 'text', text: `[${initImg.reason}]` });
+    }
     for (const att of opts.imageAttachments ?? []) {
-      userContent.push(bytesToImageBlock(att.bytes, att.mimeType));
+      const attImg = tryImageBlockOrReason(att.bytes, att.mimeType);
+      if (attImg.ok) {
+        userContent.push(attImg.block);
+      } else {
+        console.warn(`[optix-anthropic-cu] init attachment: ${attImg.reason}`);
+        userContent.push({ type: 'text', text: `[attachment skipped — ${attImg.reason}]` });
+      }
     }
     userContent.push({ type: 'text', text: opts.prompt });
     return {
@@ -477,28 +636,45 @@ export const anthropicAgentAdapter: AgentProviderAdapter<AnthropicState> = {
       pendingToolUseIds: [],
       pendingActions: new Map(),
       pendingErrors: new Map(),
+      planCache: { mtimeMs: null, content: null },
     };
   },
 
   async step(state: AnthropicState, abortSignal: AbortSignal): Promise<AgentTurnResult> {
+    // The `computer` tool's display_width_px / display_height_px change
+    // when the user resizes their screen mid-conversation (or
+    // appendUserTurn lands a new screenshot at a different size).
+    // Anthropic's `cache_control` marks "everything up to and including
+    // this block is cacheable", so the computer tool MUST sit AFTER the
+    // tool-list cache marker — otherwise a single dim change invalidates
+    // the cached tool prefix every turn.
+    //
+    // Order: stable file/meta tools FIRST (with cache marker on the last
+    // one so the whole stable prefix is cached), then the volatile
+    // computer tool LAST (uncached).
+    const fileTools = buildFileTools();
     const computerTool = {
       type: 'computer_20251124',
       name: 'computer',
       display_width_px: state.imageWidth,
       display_height_px: state.imageHeight,
     };
-    const fileTools = buildFileTools();
-    // cache_control on the LAST tool only — covers system + tools as one
-    // stable prefix.
-    const tools = [computerTool, ...fileTools].map((t, i, arr) =>
-      i === arr.length - 1
-        ? ({ ...(t as any), cache_control: { type: 'ephemeral' } })
-        : t,
-    );
+    const tools = [
+      ...fileTools.map((t, i, arr) =>
+        i === arr.length - 1
+          ? ({ ...(t as any), cache_control: { type: 'ephemeral' } })
+          : t,
+      ),
+      computerTool,
+    ];
+    // System prompt block — also marked. The plan-block portion of the
+    // system prompt is cached against its mtime in `state.planCache`,
+    // so this whole text only changes when the plan file changes (or
+    // the workspace folder rotates).
     const system = [
       {
         type: 'text',
-        text: buildSystemPrompt(state.workspaceFolder),
+        text: buildSystemPrompt(state.workspaceFolder, getCachedPlanContent(state)),
         cache_control: { type: 'ephemeral' },
       },
     ];
@@ -553,12 +729,67 @@ export const anthropicAgentAdapter: AgentProviderAdapter<AnthropicState> = {
     state.pendingActions = new Map(toolUses.map((tu) => [tu.id, tu.action]));
     state.pendingErrors = parseErrors;
 
-    const done = allIds.length === 0;
+    // Branch on stop_reason — the `done` decision can't be derived from
+    // tool_use count alone (e.g. `max_tokens` mid-tool_use truncates the
+    // turn and we should NOT continue executing a partial tool).
+    //
+    // Anthropic stop_reason values:
+    //   end_turn       — model finished naturally; done.
+    //   stop_sequence  — hit a stop sequence; done.
+    //   tool_use       — at least one tool_use emitted; continue.
+    //   max_tokens     — output cap hit; done with note (model was cut
+    //                    off mid-response — partial tool_uses unsafe to
+    //                    execute, surface the warning instead).
+    //   pause_turn     — Anthropic added this for very long tool_use
+    //                    chains; the model paused and wants to resume.
+    //                    Continue but log so the audit shows it.
+    let done: boolean;
+    let stopNote: string | undefined;
+    // Cast to string so the switch can accept stop_reason values the
+    // SDK's union type doesn't yet enumerate (e.g. `pause_turn` was
+    // added to the API before our SDK pin caught up). Treat unknown
+    // values defensively in `default`.
+    const stopReason: string | null = final.stop_reason ?? null;
+    switch (stopReason) {
+      case 'end_turn':
+      case 'stop_sequence':
+        done = true;
+        break;
+      case 'tool_use':
+        done = allIds.length === 0;
+        break;
+      case 'max_tokens':
+        console.warn(
+          `[optix-anthropic-cu] stop_reason=max_tokens — model truncated mid-response (toolUses=${allIds.length}); treating as done.`,
+        );
+        done = true;
+        stopNote = '(model output truncated by max_tokens — response may be incomplete)';
+        break;
+      case 'pause_turn':
+        console.log('[optix-anthropic-cu] stop_reason=pause_turn — continuing.');
+        done = allIds.length === 0;
+        break;
+      default:
+        if (stopReason) {
+          console.warn(
+            `[optix-anthropic-cu] unknown stop_reason=${stopReason}; defaulting to tool_use count.`,
+          );
+        }
+        done = allIds.length === 0;
+        break;
+    }
+
+    const baseFinal = done ? finalText || '(no further actions)' : finalText || undefined;
+    const composedFinal = stopNote
+      ? baseFinal
+        ? `${baseFinal}\n\n${stopNote}`
+        : stopNote
+      : baseFinal;
 
     return {
       toolUses,
       parseErrorIds: Array.from(parseErrors.keys()),
-      finalText: done ? finalText || '(no further actions)' : finalText || undefined,
+      finalText: composedFinal,
       done,
       apiMs,
       stopReason: final.stop_reason ?? undefined,
@@ -575,6 +806,21 @@ export const anthropicAgentAdapter: AgentProviderAdapter<AnthropicState> = {
     opts?: { extraUserText?: string },
   ): void {
     const byId = new Map(results.map((r) => [r.toolUseId, r]));
+    // Validate every renderer-supplied result against the pending-id set.
+    // The loop driver already does an outer check, but a defensive guard
+    // here means a future caller (or test harness) can't sneak an orphan
+    // tool_use_id into the conversation — Anthropic's API would reject
+    // the next request with a 400 and a confusing trace. Drop orphans
+    // with a clear log line instead.
+    const pendingSet = new Set(state.pendingToolUseIds);
+    for (const r of results) {
+      if (!pendingSet.has(r.toolUseId)) {
+        console.error(
+          `[optix-anthropic-cu] dropping orphan tool_result for id=${r.toolUseId} (not in pending set; pending=[${state.pendingToolUseIds.join(',')}])`,
+        );
+        byId.delete(r.toolUseId);
+      }
+    }
     const blocks: Array<
       Anthropic.Messages.ToolResultBlockParam | Anthropic.Messages.TextBlockParam
     > = [];
@@ -607,9 +853,20 @@ export const anthropicAgentAdapter: AgentProviderAdapter<AnthropicState> = {
       }
       const r = byId.get(id);
       if (!r) {
-        // Should be impossible — loop driver validates renderer-supplied
-        // results cover every non-error id before calling.
-        blocks.push({ type: 'tool_result', tool_use_id: id, content: '', is_error: true });
+        // Pending id with no matching result — synthesise an explicit
+        // is_error tool_result so the model can self-correct instead
+        // of seeing a silent gap. The loop driver pre-validates this,
+        // but races / future refactors could open the gap; defending
+        // the protocol invariant locally is cheap.
+        console.error(
+          `[optix-anthropic-cu] no result for pending tool_use id=${id}; emitting is_error placeholder.`,
+        );
+        blocks.push({
+          type: 'tool_result',
+          tool_use_id: id,
+          content: 'result missing',
+          is_error: true,
+        });
         continue;
       }
       if (r.errorText) {
@@ -620,11 +877,26 @@ export const anthropicAgentAdapter: AgentProviderAdapter<AnthropicState> = {
           is_error: true,
         });
       } else if (r.screenshotBytes && r.screenshotMimeType) {
-        blocks.push({
-          type: 'tool_result',
-          tool_use_id: id,
-          content: [bytesToImageBlock(r.screenshotBytes, r.screenshotMimeType)],
-        });
+        // Pre-validate dimensions + size. If the screenshot would be
+        // rejected by Anthropic (>5MB or >8000px on either axis), fall
+        // back to a text-only result describing why so the loop
+        // survives. Renderer should ideally never feed us oversize
+        // images — this is defensive degradation.
+        const blk = tryImageBlockOrReason(r.screenshotBytes, r.screenshotMimeType);
+        if (blk.ok) {
+          blocks.push({
+            type: 'tool_result',
+            tool_use_id: id,
+            content: [blk.block],
+          });
+        } else {
+          console.warn(`[optix-anthropic-cu] tool_result image rejected: ${blk.reason}`);
+          blocks.push({
+            type: 'tool_result',
+            tool_use_id: id,
+            content: blk.reason,
+          });
+        }
       } else if (r.text) {
         blocks.push({ type: 'tool_result', tool_use_id: id, content: r.text });
       } else {
@@ -662,10 +934,22 @@ export const anthropicAgentAdapter: AgentProviderAdapter<AnthropicState> = {
       Anthropic.Messages.TextBlockParam | Anthropic.Messages.ImageBlockParam
     > = [];
     if (opts.imageBytes && opts.imageMimeType) {
-      content.push(bytesToImageBlock(opts.imageBytes, opts.imageMimeType));
+      const blk = tryImageBlockOrReason(opts.imageBytes, opts.imageMimeType);
+      if (blk.ok) {
+        content.push(blk.block);
+      } else {
+        console.warn(`[optix-anthropic-cu] appendUserTurn screenshot: ${blk.reason}`);
+        content.push({ type: 'text', text: `[${blk.reason}]` });
+      }
     }
     for (const att of opts.imageAttachments ?? []) {
-      content.push(bytesToImageBlock(att.bytes, att.mimeType));
+      const blk = tryImageBlockOrReason(att.bytes, att.mimeType);
+      if (blk.ok) {
+        content.push(blk.block);
+      } else {
+        console.warn(`[optix-anthropic-cu] appendUserTurn attachment: ${blk.reason}`);
+        content.push({ type: 'text', text: `[attachment skipped — ${blk.reason}]` });
+      }
     }
     content.push({ type: 'text', text: opts.prompt });
     state.messages.push({ role: 'user', content });
@@ -680,5 +964,34 @@ export const anthropicAgentAdapter: AgentProviderAdapter<AnthropicState> = {
     state.pendingToolUseIds = [];
     state.pendingActions = new Map();
     state.pendingErrors = new Map();
+  },
+
+  /** BYO-key path: re-create the SDK client with the new key. The
+   *  Optix Cloud adapter overrides this in its own object to point at
+   *  the Firebase relay (see `optix-cloud.ts: refreshCredential`); this
+   *  base implementation is for direct-Anthropic users whose API key
+   *  doesn't expire mid-session, but implementing it keeps the
+   *  interface symmetric and lets a future "rotate API key" feature
+   *  land without re-architecting. */
+  refreshCredential(state: AnthropicState, credential: string): void {
+    state.client = new Anthropic({ apiKey: credential });
+  },
+
+  /** Drop middle history when the loop driver notices we're approaching
+   *  the soft token cap. Keeps the first KEEP_FIRST_TURNS + last
+   *  KEEP_LAST_TURNS messages — same policy the legacy duck-typed
+   *  truncation in computer-loop.ts:144-167 used to enforce. The
+   *  system prompt lives outside `messages` and is unaffected. */
+  truncateHistory(state: AnthropicState): void {
+    const total = state.messages.length;
+    if (total <= KEEP_FIRST_TURNS + KEEP_LAST_TURNS) return;
+    const head = state.messages.slice(0, KEEP_FIRST_TURNS);
+    const tail = state.messages.slice(total - KEEP_LAST_TURNS);
+    const dropped = total - head.length - tail.length;
+    state.messages = [...head, ...tail];
+    console.warn(
+      `[optix-anthropic-cu] history truncated: dropped ${dropped} middle messages ` +
+        `(kept first ${head.length} + last ${tail.length} of ${total}).`,
+    );
   },
 };

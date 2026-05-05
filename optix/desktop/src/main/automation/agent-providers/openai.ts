@@ -53,6 +53,12 @@ type OpenAIState = {
   pendingErrors: Map<string, string>;
   /** Order-preserving list of call_ids from the most recent turn. */
   pendingCallIds: string[];
+  /** Set of call_ids the model emitted in the most recent turn that we
+   *  expect host-supplied results for. Validated on every appendResults
+   *  call — orphan results (id not in this set) are dropped, missing
+   *  results are filled with stub outputs so the API never sees an
+   *  unbalanced call/output pair. Cleared at the end of appendResults. */
+  pendingCallIdSet: Set<string>;
   /** call_id → 'computer' | 'function'. Lets `appendResults` build the
    *  right output item type without re-walking the input array. */
   pendingCallKind: Map<string, 'computer' | 'function'>;
@@ -124,8 +130,11 @@ function buildInstructions(workspaceFolder: string | null): string {
   }
   if (workspaceFolder) {
     lines.push('');
+    // JSON.stringify on the path defends against backticks / newlines / prompt
+    // injection attempts in workspace folder names. The model treats a
+    // JSON-quoted string as data, not formatting.
     lines.push(
-      `Workspace: \`${workspaceFolder}\`. Stay inside this folder for file-system actions whenever possible. Any file action targeting a path outside this folder will be paused for explicit user approval — regardless of the user's other approval settings.`,
+      `Workspace: ${JSON.stringify(workspaceFolder)}. Stay inside this folder for file-system actions whenever possible. Any file action targeting a path outside this folder will be paused for explicit user approval — regardless of the user's other approval settings.`,
     );
   }
   const plan = readPlanSync();
@@ -136,7 +145,12 @@ function buildInstructions(workspaceFolder: string | null): string {
       `Active plan (you set this previously and the user approved it${plan.updatedAt !== plan.createdAt ? '; revised since then' : ''}):`,
     );
     lines.push('');
-    lines.push(plan.content);
+    // Plan content is user-controlled (the model wrote it but the user
+    // approved it). Wrap in a fenced block so any embedded markdown / triple
+    // backticks can't break out of the system prompt structure.
+    lines.push('```');
+    lines.push(plan.content.replace(/```/g, '``\u200b`'));
+    lines.push('```');
     lines.push('');
     lines.push(
       'Continue executing this plan. The user already has it pinned in their UI — you do NOT need to re-screenshot or call any tool just to "read" or "describe" the plan. If the user asks what the plan is, answer directly from the text above. Only call `plan` again if scope genuinely changes.',
@@ -150,12 +164,28 @@ function buildInstructions(workspaceFolder: string | null): string {
 // agent tool, plain `function` types for our file tools).
 // ---------------------------------------------------------------------------
 
+// OpenAI rejects computer_use_preview tool specs with display dimensions
+// above ~2048px. High-DPI multi-monitor setups can easily blow past this,
+// so clamp here rather than letting the request fail.
+const MAX_DISPLAY_DIM = 2048;
+
+function clampDisplayDim(value: number, axis: 'width' | 'height'): number {
+  if (!Number.isFinite(value) || value <= 0) return MAX_DISPLAY_DIM;
+  if (value > MAX_DISPLAY_DIM) {
+    console.warn(
+      `[optix-openai-cu] clamping display_${axis}=${value} to ${MAX_DISPLAY_DIM} (OpenAI limit).`,
+    );
+    return MAX_DISPLAY_DIM;
+  }
+  return Math.round(value);
+}
+
 function buildTools(displayWidth: number, displayHeight: number): unknown[] {
   return [
     {
       type: 'computer_use_preview',
-      display_width: displayWidth,
-      display_height: displayHeight,
+      display_width: clampDisplayDim(displayWidth, 'width'),
+      display_height: clampDisplayDim(displayHeight, 'height'),
       environment: 'windows',
     },
     {
@@ -417,8 +447,35 @@ function parseComputerCall(item: any): ParseResult {
 }
 
 function parseFunctionCall(item: any): ParseResult {
+  // Whether arguments arrive as a string (the documented Responses API
+  // contract) or as a pre-parsed object (some response replays / proxies),
+  // the value MUST go through the Zod schema. Object-path used to skip
+  // validation, which let malformed payloads reach the executors.
+  let args: unknown;
   try {
-    const args = typeof item.arguments === 'string' ? JSON.parse(item.arguments) : item.arguments;
+    if (typeof item.arguments === 'string') {
+      args = JSON.parse(item.arguments);
+    } else if (item.arguments == null) {
+      args = {};
+    } else if (typeof item.arguments === 'object') {
+      args = item.arguments;
+    } else {
+      return {
+        ok: false,
+        error: `Invalid input for tool "${item.name}": arguments must be a JSON string or object, got ${typeof item.arguments}`,
+      };
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Invalid JSON for tool "${item.name}": ${msg}` };
+  }
+  if (typeof args !== 'object' || args === null || Array.isArray(args)) {
+    return {
+      ok: false,
+      error: `Invalid input for tool "${item.name}": arguments must be a JSON object`,
+    };
+  }
+  try {
     const labelTools = ['click_label', 'scroll_label', 'type_into_label'];
     if (labelTools.includes(item.name)) {
       const data = LabelToolActionSchema.parse({ action: item.name, ...args });
@@ -448,20 +505,102 @@ function parseFunctionCall(item: any): ParseResult {
 // HTTP helpers
 // ---------------------------------------------------------------------------
 
+/** Typed error thrown when the abort signal fires during a request or
+ *  the inter-retry sleep. The loop driver checks `code === 'aborted'` to
+ *  distinguish user-initiated cancellation from network failure when
+ *  writing the audit log. */
+export class OpenAIAbortError extends Error {
+  readonly code = 'aborted' as const;
+  constructor(message = 'request aborted') {
+    super(message);
+    this.name = 'OpenAIAbortError';
+  }
+}
+
+/** Parse a Retry-After header value. Spec allows either an integer number
+ *  of seconds OR an HTTP-date. Returns ms, or null if unparseable. */
+function parseRetryAfter(headerVal: string | null): number | null {
+  if (!headerVal) return null;
+  const trimmed = headerVal.trim();
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    return Math.round(parseFloat(trimmed) * 1000);
+  }
+  const dateMs = Date.parse(trimmed);
+  if (!Number.isNaN(dateMs)) {
+    return Math.max(0, dateMs - Date.now());
+  }
+  return null;
+}
+
+const MAX_RETRY_AFTER_MS = 60_000;
+
+/** Sleep that resolves either when the timer fires or when the abort
+ *  signal trips. Throws OpenAIAbortError on abort. */
+function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(new OpenAIAbortError());
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+      reject(new OpenAIAbortError());
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+async function doFetch(apiKey: string, body: unknown, signal: AbortSignal): Promise<Response> {
+  try {
+    return await fetch(RESPONSES_ENDPOINT, {
+      method: 'POST',
+      signal,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    // fetch surfaces aborts as DOMException name="AbortError". Normalise
+    // to our typed error so the caller doesn't need to sniff err.name.
+    if (
+      signal.aborted ||
+      (err as { name?: string } | null)?.name === 'AbortError'
+    ) {
+      throw new OpenAIAbortError();
+    }
+    throw err;
+  }
+}
+
 async function postResponses(
   apiKey: string,
   body: unknown,
   signal: AbortSignal,
 ): Promise<any> {
-  const res = await fetch(RESPONSES_ENDPOINT, {
-    method: 'POST',
-    signal,
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
+  let res = await doFetch(apiKey, body, signal);
+
+  // 429: respect Retry-After (capped) and retry once. Anything else 4xx/5xx
+  // throws straight through.
+  if (res.status === 429) {
+    const retryAfterMs = parseRetryAfter(res.headers.get('retry-after'));
+    const sleepMs = Math.min(MAX_RETRY_AFTER_MS, retryAfterMs ?? 5_000);
+    // Drain the body to free the connection before sleeping.
+    await res.text().catch(() => '');
+    console.warn(
+      `[optix-openai-cu] 429 rate-limited; sleeping ${sleepMs}ms before single retry (cap ${MAX_RETRY_AFTER_MS}ms).`,
+    );
+    await abortableSleep(sleepMs, signal);
+    res = await doFetch(apiKey, body, signal);
+    if (res.status === 429) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`OpenAI Responses rate limit exceeded after retry: ${text}`);
+    }
+  }
+
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`OpenAI Responses ${res.status}: ${text}`);
@@ -501,6 +640,7 @@ export const openaiAgentAdapter: AgentProviderAdapter<OpenAIState> = {
       pendingActions: new Map(),
       pendingErrors: new Map(),
       pendingCallIds: [],
+      pendingCallIdSet: new Set(),
       pendingCallKind: new Map(),
     };
   },
@@ -526,13 +666,15 @@ export const openaiAgentAdapter: AgentProviderAdapter<OpenAIState> = {
     // Truncation breadcrumb — when the Responses API has to drop earlier
     // input to fit context (we set `truncation: 'auto'` so this is on),
     // it surfaces an `incomplete_details.reason` of 'max_input_tokens'
-    // or similar. Logging the loop signature lets a user reporting weird
-    // mid-task amnesia point at a specific turn so we can confirm.
+    // or similar. Log loudly with a grep-friendly prefix so a user
+    // reporting mid-task amnesia can point at a specific turn.
     const incomplete = (resp as { incomplete_details?: { reason?: string }; status?: string })
       .incomplete_details;
-    if (incomplete?.reason || resp.status === 'incomplete') {
+    const incompleteReason = incomplete?.reason;
+    const isIncomplete = Boolean(incompleteReason) || resp.status === 'incomplete';
+    if (isIncomplete) {
       console.warn(
-        `[optix-openai-cu] response was truncated/incomplete — loopSig=${state.modelId}@${state.imageWidth}x${state.imageHeight} reason=${incomplete?.reason ?? resp.status}`,
+        `[optix-openai-incomplete] truncated/incomplete response — model=${state.modelId} display=${state.imageWidth}x${state.imageHeight} reason=${incompleteReason ?? resp.status} inputItems=${state.input.length}`,
       );
     }
 
@@ -549,14 +691,28 @@ export const openaiAgentAdapter: AgentProviderAdapter<OpenAIState> = {
     const textParts: string[] = [];
     for (const item of output) {
       if (item.type === 'computer_call') {
-        const id = item.call_id as string;
+        // Validate call_id presence — a missing/empty id makes the
+        // function_call_output unmappable next turn, so skip and log.
+        if (typeof item.call_id !== 'string' || item.call_id.length === 0) {
+          console.error(
+            `[optix-openai-cu] computer_call missing valid call_id; skipping. item=${JSON.stringify(item).slice(0, 200)}`,
+          );
+          continue;
+        }
+        const id = item.call_id;
         callIds.push(id);
         callKind.set(id, 'computer');
         const r = parseComputerCall(item);
         if (r.ok) toolUses.push({ id, action: r.action });
         else parseErrors.set(id, r.error);
       } else if (item.type === 'function_call') {
-        const id = item.call_id as string;
+        if (typeof item.call_id !== 'string' || item.call_id.length === 0) {
+          console.error(
+            `[optix-openai-cu] function_call missing valid call_id; skipping. name=${item.name ?? '?'}`,
+          );
+          continue;
+        }
+        const id = item.call_id;
         callIds.push(id);
         callKind.set(id, 'function');
         const r = parseFunctionCall(item);
@@ -576,6 +732,7 @@ export const openaiAgentAdapter: AgentProviderAdapter<OpenAIState> = {
     const finalText = textParts.join('\n').trim();
 
     state.pendingCallIds = callIds;
+    state.pendingCallIdSet = new Set(callIds);
     state.pendingCallKind = callKind;
     state.pendingActions = new Map(toolUses.map((tu) => [tu.id, tu.action]));
     state.pendingErrors = parseErrors;
@@ -589,13 +746,27 @@ export const openaiAgentAdapter: AgentProviderAdapter<OpenAIState> = {
       input_tokens_details?: { cached_tokens?: number };
     }).input_tokens_details?.cached_tokens;
 
+    // Map Responses API status → Anthropic-style finish reasons so the
+    // audit log uses a consistent vocabulary across providers.
+    //   success                                → 'stop'
+    //   incomplete + reason='max_input_tokens' → 'length'
+    //   incomplete + anything else             → 'incomplete'
+    let stopReason: string | undefined;
+    if (resp.status === 'success') {
+      stopReason = 'stop';
+    } else if (resp.status === 'incomplete') {
+      stopReason = incompleteReason === 'max_input_tokens' ? 'length' : 'incomplete';
+    } else if (typeof resp.status === 'string') {
+      stopReason = resp.status;
+    }
+
     return {
       toolUses,
       parseErrorIds: Array.from(parseErrors.keys()),
       finalText: done ? finalText || '(no further actions)' : finalText || undefined,
       done,
       apiMs,
-      stopReason: resp.status as string | undefined,
+      stopReason,
       inputTokens: usage.input_tokens,
       outputTokens: usage.output_tokens,
       // OpenAI has no "cache creation" concept (caching is automatic),
@@ -609,20 +780,38 @@ export const openaiAgentAdapter: AgentProviderAdapter<OpenAIState> = {
     results: AgentToolResult[],
     opts?: { extraUserText?: string },
   ): void {
-    const byId = new Map(results.map((r) => [r.toolUseId, r]));
-    // Mismatch between renderer-supplied results and the call ids we
-    // expect means an orphaned tool_result would otherwise be silently
-    // dropped. Fail loudly — the loop driver should never reach here
-    // with a count that doesn't line up with `pendingCallIds`.
-    if (byId.size !== state.pendingCallIds.length) {
-      throw new Error(
-        `OpenAI adapter: result-count mismatch — expected ${state.pendingCallIds.length} results, got ${byId.size}.`,
-      );
+    // Defensive validation: the Responses API rejects the next request
+    // outright if any function_call lacks a matching function_call_output
+    // (or vice versa). So we (a) drop orphan results whose toolUseId
+    // isn't in pendingCallIdSet, and (b) synthesise stub outputs for any
+    // pendingCallId without a matching result. This makes the adapter
+    // robust against renderer races / partial-execution scenarios that
+    // used to brick the loop.
+    const filteredResults: AgentToolResult[] = [];
+    for (const r of results) {
+      if (!state.pendingCallIdSet.has(r.toolUseId)) {
+        console.error(
+          `[optix-openai-cu] dropping orphan tool result — call_id "${r.toolUseId}" not in pending set (size=${state.pendingCallIdSet.size}).`,
+        );
+        continue;
+      }
+      filteredResults.push(r);
     }
+    const byId = new Map(filteredResults.map((r) => [r.toolUseId, r]));
     for (const id of state.pendingCallIds) {
       const kind = state.pendingCallKind.get(id) ?? 'function';
       const parseErr = state.pendingErrors.get(id);
       const r = byId.get(id);
+      // Stub-output marker: pendingCallId with no parse error AND no
+      // host-supplied result. Surface as an explicit "result missing"
+      // string so the model sees something coherent, and the API never
+      // sees an unbalanced call/output pair.
+      const isMissing = !parseErr && !r;
+      if (isMissing) {
+        console.error(
+          `[optix-openai-cu] no result for pending call_id "${id}" (kind=${kind}); emitting stub.`,
+        );
+      }
 
       // Defend against a renderer that pairs a screenshot with a
       // non-computer action — file/shell results have no semantic for
@@ -645,6 +834,12 @@ export const openaiAgentAdapter: AgentProviderAdapter<OpenAIState> = {
             type: 'computer_call_output',
             call_id: id,
             output: { type: 'input_text', text: parseErr },
+          });
+        } else if (isMissing) {
+          state.input.push({
+            type: 'computer_call_output',
+            call_id: id,
+            output: { type: 'input_text', text: 'result missing' },
           });
         } else if (r?.errorText) {
           state.input.push({
@@ -670,7 +865,9 @@ export const openaiAgentAdapter: AgentProviderAdapter<OpenAIState> = {
         }
       } else {
         // function_call_output: `output` is a plain string.
-        const text = parseErr ?? r?.errorText ?? r?.text ?? '';
+        const text = isMissing
+          ? 'result missing'
+          : (parseErr ?? r?.errorText ?? r?.text ?? '');
         state.input.push({
           type: 'function_call_output',
           call_id: id,
@@ -697,6 +894,7 @@ export const openaiAgentAdapter: AgentProviderAdapter<OpenAIState> = {
     }
 
     state.pendingCallIds = [];
+    state.pendingCallIdSet = new Set();
     state.pendingCallKind = new Map();
     state.pendingActions = new Map();
     state.pendingErrors = new Map();
@@ -726,8 +924,49 @@ export const openaiAgentAdapter: AgentProviderAdapter<OpenAIState> = {
       state.imageHeight = opts.imageHeight;
     }
     state.pendingCallIds = [];
+    state.pendingCallIdSet = new Set();
     state.pendingCallKind = new Map();
     state.pendingActions = new Map();
     state.pendingErrors = new Map();
+  },
+
+  // History truncation — implements the optional truncateHistory() method
+  // from AgentProviderAdapter (added by Fix Agent A). The shared loop
+  // driver in computer-loop.ts previously duck-typed `state.messages`,
+  // which was a silent no-op for OpenAI (we use `state.input`).
+  //
+  // Heuristic: a "turn" in our input array spans roughly one user item +
+  // one model output group (function_call / computer_call) + one tool
+  // result item — typically 3-5 items. Keeping first 4 + last 40 items
+  // approximates "first 2 turns + last 20 turns" without us having to
+  // group items into turns explicitly. Threshold of 60 matches the
+  // soft-cap in computer-loop.ts (KEEP_FIRST_TURNS=2 + KEEP_LAST_TURNS=20
+  // → ~6 + ~60 items at typical turn density).
+  truncateHistory(state: OpenAIState): void {
+    const KEEP_HEAD = 4;
+    const KEEP_TAIL = 40;
+    const total = state.input.length;
+    if (total <= KEEP_HEAD + KEEP_TAIL) return;
+    const head = state.input.slice(0, KEEP_HEAD);
+    // Don't snap a function_call_output / computer_call_output to the
+    // start of the tail without its preceding function_call — the API
+    // rejects unbalanced outputs. If the first tail item is an output,
+    // bump the slice start back until we land on something else.
+    let tailStart = total - KEEP_TAIL;
+    while (tailStart > KEEP_HEAD) {
+      const candidate = state.input[tailStart];
+      const ty = candidate && typeof candidate === 'object' ? (candidate.type as string | undefined) : undefined;
+      if (ty === 'function_call_output' || ty === 'computer_call_output') {
+        tailStart -= 1;
+        continue;
+      }
+      break;
+    }
+    const adjustedTail = state.input.slice(tailStart);
+    const dropped = total - head.length - adjustedTail.length;
+    state.input = [...head, ...adjustedTail];
+    console.warn(
+      `[optix-openai-cu] history truncated: kept first ${head.length} + last ${adjustedTail.length} items, dropped ${dropped} from middle (total was ${total}).`,
+    );
   },
 };

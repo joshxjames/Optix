@@ -1,19 +1,26 @@
-// Per-model pricing + cost estimation. Lifted out of audit.ts so the
-// chat-history module can compute Ask-mode costs from the same source
-// of truth — keeping the rate table in one place avoids drift when
-// providers change their prices.
+// Per-model pricing + cost estimation, used to track Optix Cloud
+// spend on the user's behalf and to surface per-turn costs in the UI.
+//
+// SCOPE: only Anthropic models (and the Optix-Cloud-relayed variants
+// of those same models) are priced here. Other providers — OpenAI,
+// Kimi, Google Gemini — are self-funded by users with their own API
+// keys; we don't intermediate billing for them, so tracking their
+// per-token rates would be a maintenance burden with no business
+// benefit. `costForTurn()` returns 0 for those providers, and the UI
+// is expected to suppress the cost label rather than show "$0.00".
 //
 // All rates are USD per million tokens. Cache rates are declared
 // explicitly on every entry — no implicit input-multiplier fallback,
 // because silent zero-cost surprises are worse than a typecheck error
 // when a new model is added.
 //
-// Convention: every model ID listed in `shared/models.ts` MUST have a
-// matching entry here, and dated snapshots (e.g. `claude-haiku-4-5-20251001`)
-// get their own entry alongside the base name (`claude-haiku-4-5`). The
-// base entry stays around as a longest-prefix fallback for older stored
-// model IDs after a snapshot is deprecated. Module init logs a console
-// warning if a `MODELS_BY_PROVIDER` entry is missing pricing.
+// Convention: every Anthropic model ID listed in `shared/models.ts`
+// MUST have a matching entry here, and dated snapshots
+// (e.g. `claude-haiku-4-5-20251001`) get their own entry alongside the
+// base name (`claude-haiku-4-5`). The base entry stays around as a
+// longest-prefix fallback for older stored model IDs after a snapshot
+// is deprecated. Module init logs a console warning if an Anthropic /
+// Optix-Cloud entry is missing pricing.
 
 import { MODELS_BY_PROVIDER } from './models';
 import type { TokenUsage } from './schemas';
@@ -73,23 +80,6 @@ const HAIKU_4_5: ModelPricing = {
   cacheReadUsdPerMtok: 0.1,
 };
 
-// OpenAI published rates. No prompt-caching pricing distinct from
-// input on these models — we set cacheRead = input × 0.5 (OpenAI's
-// cached-input discount) and cacheWrite = input (no surcharge).
-const GPT_4O: ModelPricing = {
-  inputUsdPerMtok: 2.5,
-  outputUsdPerMtok: 10,
-  cacheWriteUsdPerMtok: 2.5,
-  cacheReadUsdPerMtok: 1.25,
-};
-
-const GPT_4O_MINI: ModelPricing = {
-  inputUsdPerMtok: 0.15,
-  outputUsdPerMtok: 0.6,
-  cacheWriteUsdPerMtok: 0.15,
-  cacheReadUsdPerMtok: 0.075,
-};
-
 const PRICING: Record<string, ModelPricing> = {
   // --- Anthropic: base names (longest-prefix fallback) ---
   'claude-opus-4-7': OPUS_4_7,
@@ -97,27 +87,20 @@ const PRICING: Record<string, ModelPricing> = {
   'claude-haiku-4-5': HAIKU_4_5,
 
   // --- Anthropic: dated snapshots used in models.ts ---
-  // TODO(snapshot): pin opus/sonnet snapshot IDs once Agent picks dated
+  // TODO(snapshot): pin opus/sonnet snapshot IDs once we adopt dated
   // versions; currently models.ts ships these as base IDs.
   'claude-haiku-4-5-20251001': HAIKU_4_5,
-
-  // --- OpenAI: base names (longest-prefix fallback) ---
-  'gpt-4o': GPT_4O,
-  'gpt-4o-mini': GPT_4O_MINI,
-
-  // --- OpenAI: dated snapshots ---
-  'gpt-4o-2024-11-20': GPT_4O,
-  'gpt-4o-2024-08-06': GPT_4O,
-  'gpt-4o-mini-2024-07-18': GPT_4O_MINI,
 };
 
-// Loud-during-dev sanity check: every model in the picker should price.
-// We only warn on Anthropic + OpenAI; Kimi and Google are priced
-// elsewhere (or not at all) and are out of scope here.
+// Loud-during-dev sanity check: every Anthropic / Optix-Cloud model in
+// the picker must have a pricing entry, since those are the rates we
+// bill the user for. Other providers (OpenAI, Kimi, Google) are
+// user-funded via their own API keys — they're intentionally absent
+// from the warning list.
 (function warnOnMissingPricing() {
   const priced: Array<[string, string]> = [];
   for (const [provider, entries] of Object.entries(MODELS_BY_PROVIDER)) {
-    if (provider !== 'anthropic' && provider !== 'openai' && provider !== 'optixCloud') continue;
+    if (provider !== 'anthropic' && provider !== 'optixCloud') continue;
     for (const m of entries) {
       if (!resolvePricing(m.id)) priced.push([provider, m.id]);
     }
@@ -145,9 +128,11 @@ function resolvePricing(modelId: string): ModelPricing | null {
   return best?.price ?? null;
 }
 
-/** Cost of one turn in USD. Returns 0 for unknown models so the UI
- *  can still display SOMETHING rather than crash; callers that want
- *  to flag unknowns can check `resolvePricing` first. */
+/** Cost of one turn in USD. Returns 0 for non-Anthropic/Optix-Cloud
+ *  models (BYO-key providers — see file header) so the UI suppresses
+ *  the cost label rather than misrepresenting "$0.00" as "free".
+ *  Callers that need to distinguish "no pricing data" from "genuinely
+ *  $0" can call `resolvePricing` first. */
 export function costForTurn(modelId: string, usage: TokenUsage | undefined): number {
   if (!usage) return 0;
   const price = resolvePricing(modelId);

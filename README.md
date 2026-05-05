@@ -36,10 +36,12 @@ Other notable bits:
   freely; anything outside always asks for explicit approval, regardless of
   approval mode.
 - **Cost ceiling** — set a USD cap per Access run; Optix stops the loop if
-  estimated spend crosses it.
+  estimated spend crosses it. (Cost is tracked for Anthropic / Optix Cloud
+  models only — when you bring your own OpenAI / Kimi / Gemini key, those
+  providers handle billing directly and Optix doesn't intermediate.)
 - **Audit log** — every Access run is saved as inspectable JSON (messages,
-  turns, actions, per-turn token usage, exact cost). Same for Ask
-  conversations and saved automations.
+  turns, actions, per-turn token usage, and exact cost for Anthropic /
+  Optix Cloud runs). Same for Ask conversations and saved automations.
 - **Privacy pause** — toggle off screen capture for sensitive work; the
   agent runs blind without crashing.
 
@@ -202,13 +204,21 @@ Every provider implementation lives behind a small interface in
 Adding a new provider means writing one adapter; the rest of the app doesn't
 need to know.
 
-Currently shipped:
+Currently shipped (model IDs are the exact strings the SDKs accept; the
+Settings picker mirrors `optix/desktop/src/shared/models.ts`):
 
-- Anthropic — Claude Opus 4.7, Sonnet 4.6, and other vision Claude models
-- OpenAI — GPT-4o and other vision models via the Responses API
-- Moonshot / Kimi — OpenAI-compatible, reuses the `openai` SDK with a custom
-  base URL
-- Google Gemini — `gemini-1.5-pro`, `gemini-2.x-pro`
+- Anthropic — `claude-opus-4-7`, `claude-sonnet-4-6`,
+  `claude-haiku-4-5-20251001`
+- OpenAI — `gpt-4o-2024-11-20`, `gpt-4o-mini-2024-07-18` (via the Responses
+  API)
+- Moonshot / Kimi — `kimi-k2.5`, `kimi-latest`,
+  `moonshot-v1-8k-vision-preview` (OpenAI-compatible; reuses the `openai`
+  SDK with a custom base URL)
+- Google Gemini — `gemini-1.5-pro`, `gemini-1.5-flash`,
+  `gemini-2.0-flash-exp`
+
+Settings also accepts a custom model ID per provider if you want one not in
+the picker.
 
 ---
 

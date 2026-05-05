@@ -145,25 +145,18 @@ function maybeTruncateHistory(state: LoopState): void {
   const bytes = estimateStateBytes(state.adapterState);
   const tokens = Math.floor(bytes / BYTES_PER_TOKEN_ESTIMATE);
   if (tokens < TOKEN_SOFT_CAP) return;
-  // Duck-type access — every adapter we currently ship (Anthropic,
-  // OpenAI, Kimi, Google, OptixCloud) stores its history on
-  // `state.messages`. If a future adapter uses a different field this
-  // is a no-op and the loop just keeps growing until the provider
-  // returns a context-overflow error. TODO: add a formal
-  // `truncateHistory()` method to AgentProviderAdapter — out of scope
-  // for this fix (Fix Agent C owns providers/agent-providers).
-  const adapter = state.adapterState as { messages?: unknown[] };
-  if (!Array.isArray(adapter.messages)) return;
-  const total = adapter.messages.length;
-  if (total <= KEEP_FIRST_TURNS + KEEP_LAST_TURNS) return;
-  const head = adapter.messages.slice(0, KEEP_FIRST_TURNS);
-  const tail = adapter.messages.slice(total - KEEP_LAST_TURNS);
-  const dropped = total - head.length - tail.length;
-  adapter.messages = [...head, ...tail];
-  console.warn(
-    `[optix-cu] history truncated: estimated ${tokens} tokens > cap ${TOKEN_SOFT_CAP}; ` +
-      `dropped ${dropped} middle messages (kept first ${head.length} + last ${tail.length})`,
-  );
+  // Formal interface method (Round 8). Each adapter knows its own
+  // history shape — Anthropic/Kimi use `messages`, Gemini uses
+  // `contents`, OpenAI uses `input`. Pre-Round-8 this duck-typed
+  // `state.messages` and silently no-op'd for the latter two — the
+  // loop just kept growing until the provider returned a context-
+  // overflow error. Now we delegate to the adapter.
+  if (state.adapter.truncateHistory) {
+    state.adapter.truncateHistory(state.adapterState);
+    console.warn(
+      `[optix-cu] history truncate triggered: estimated ${tokens} tokens > cap ${TOKEN_SOFT_CAP}`,
+    );
+  }
 }
 
 const loops = new Map<string, LoopState>();

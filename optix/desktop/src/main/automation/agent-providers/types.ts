@@ -114,6 +114,47 @@ export interface AgentProviderAdapter<State = unknown> {
    *  and the loop driver calls this before the next step. Adapters
    *  that don't need refresh (BYO-key providers) leave it undefined. */
   refreshCredential?(state: State, credential: string): void;
+  /** Optional: trim conversation history to keep recent turns + system
+   *  prompt. Called by the loop driver when estimated input tokens
+   *  approach the soft cap so the next API call sends a smaller
+   *  payload rather than getting rejected for context overflow.
+   *
+   *  Implementations should keep:
+   *    - the system prompt (separate from `messages`, not at risk),
+   *    - the FIRST 2 turns of `messages` (initial user prompt + first
+   *      assistant reply — they carry the task framing the model needs
+   *      to remember what it was asked to do), and
+   *    - the LAST 20 turns (recent context the model needs to make its
+   *      next decision).
+   *  Everything between is dropped. Implementations should `console.warn`
+   *  with a one-line summary (turn counts before/after) so audit /
+   *  console scrubbing can see when truncation fired.
+   *
+   *  Optional for backward compat — adapters that don't implement it
+   *  fall back to the loop driver's old duck-type path (which only
+   *  handles a `state.messages` array). New adapters should implement
+   *  this rather than rely on duck-typing.
+   *
+   *  TODO(computer-loop.ts:144-167): once every adapter implements this,
+   *  replace the duck-typed `maybeTruncateHistory` with
+   *  `state.adapter.truncateHistory?.(state.adapterState)` and drop the
+   *  inline truncation logic. Out of scope for the current fix. */
+  truncateHistory?(state: State): void;
+  /** Optional: release any resources held by the adapter state when the
+   *  loop driver tears the loop down. Most adapters have nothing to
+   *  release (the SDK client is GC'd with the state object itself), but
+   *  if a future adapter holds open sockets, file handles, or worker
+   *  threads in its state, this is the hook.
+   *
+   *  TODO(computer-loop.ts: `loops` Map): the current `loops` Map has
+   *  no eviction beyond explicit `endComputerLoop` / `abortComputerLoop`
+   *  / `finalizeAllPendingLoops`. Adapter state is owned by the loop
+   *  driver and stays alive (with its full message history + cached
+   *  base64 screenshots) until one of those calls fires. A renderer
+   *  that forgets to tear down a paused conversation effectively leaks
+   *  the state for the lifetime of the main process. Cross-file work,
+   *  out of scope here. */
+  cleanupState?(state: State): void;
 }
 
 export type AppendUserTurnOpts = {
