@@ -251,6 +251,35 @@ function setupHowScrollytelling() {
   const triggers = section.querySelectorAll('.how__trigger');
   if (triggers.length === 0) return;
 
+  // Tabs at the top of the mock window — visual state is fully driven by
+  // [data-phase] in CSS (so the IO below remains the single source of
+  // truth). Click handler is the only JS the tabs need: it scrolls so
+  // the matching trigger lands at viewport center, which causes the IO
+  // to fire and the data-phase + active-tab styling to update.
+  const tabs = section.querySelectorAll('.how__tab');
+  tabs.forEach((tab) => {
+    tab.addEventListener('click', () => {
+      const phase = tab.getAttribute('data-tab');
+      if (!phase) return;
+      const target = section.querySelector(
+        `.how__trigger[data-how-phase="${phase}"]`,
+      );
+      if (!target) return;
+      // Trigger blocks are 100vh tall; scrolling so their CENTRE is at
+      // viewport centre is exactly what fires the IO at the rootMargin
+      // we set below ("-50% 0px -50% 0px"). The math is the same as
+      // `scrollIntoView({ block: 'center' })` but explicit so we can
+      // honour reduced-motion preference.
+      const rect = target.getBoundingClientRect();
+      const top =
+        window.scrollY + rect.top + rect.height / 2 - window.innerHeight / 2;
+      window.scrollTo({
+        top,
+        behavior: PREFERS_REDUCED ? 'auto' : 'smooth',
+      });
+    });
+  });
+
   // On reduced-motion / mobile-collapsed layout, the triggers are hidden
   // (display: none via the @media query). The observer would still fire
   // but with all triggers off-screen, the result is no-op. Bail early

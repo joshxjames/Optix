@@ -181,8 +181,22 @@
             <!-- Graphic — three scenes layered, only one visible at a time. -->
             <div class="how__visual">
               <div class="how__frame">
-                <div class="how__frame-bar" aria-hidden="true">
-                  <span></span><span></span><span></span>
+                <div class="how__frame-bar">
+                  <!-- Window-chrome dots (macOS style) — purely decorative. -->
+                  <span class="how__frame-dots" aria-hidden="true">
+                    <span></span><span></span><span></span>
+                  </span>
+
+                  <!-- Phase tabs — centered. The active state is driven
+                       purely by the section's [data-phase] attribute (set
+                       by setupHowScrollytelling on scroll), so the tabs
+                       follow the scroll automatically. Clicking a tab
+                       smooth-scrolls to that phase's trigger zone. -->
+                  <div class="how__tabs" role="tablist" aria-label="How it works phases">
+                    <button type="button" class="how__tab" data-tab="1" role="tab">Ask</button>
+                    <button type="button" class="how__tab" data-tab="2" role="tab">Access</button>
+                    <button type="button" class="how__tab" data-tab="3" role="tab">Automate</button>
+                  </div>
                 </div>
 
                 <!-- Persistent widget mock — shared across all scenes. -->
