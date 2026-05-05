@@ -33,6 +33,11 @@ import { getModelFor, getSettings } from '@main/storage/settings-store';
 // distinct from the tool action) so its request stays inline.
 const ExecuteLabelRequestSchema = z.object({
   action: LabelToolActionSchema,
+  /** Same foreground-guard semantics as ComputerExecuteRequest — the
+   *  loop captures the HWND once at start and passes it on every
+   *  destructive dispatch so a mid-loop Alt-Tab can't land a click on
+   *  the wrong window. */
+  expectedForegroundHwnd: z.string().optional(),
 });
 
 const ScopeCheckRequestSchema = z.object({ path: z.string() });
@@ -113,6 +118,7 @@ export function registerComputerIpc(): void {
       imageWidth: req.imageWidth,
       imageHeight: req.imageHeight,
       snapToUia: req.snapToUia,
+      expectedForegroundHwnd: req.expectedForegroundHwnd,
     });
   });
 
@@ -123,7 +129,9 @@ export function registerComputerIpc(): void {
 
   ipcMain.handle(IPC.computer.executeLabel, async (_event, raw: unknown) => {
     const req = ExecuteLabelRequestSchema.parse(raw);
-    return await executeLabelAction(req.action);
+    return await executeLabelAction(req.action, {
+      expectedForegroundHwnd: req.expectedForegroundHwnd,
+    });
   });
 
   ipcMain.handle(IPC.computer.executeShell, async (_event, raw: unknown) => {

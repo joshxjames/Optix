@@ -433,6 +433,12 @@ export const ComputerExecuteRequestSchema = z.object({
   /** Non-Anthropic providers (Kimi, Gemini) ask the executor to snap
    *  click coords to the nearest interactive UIA element. */
   snapToUia: z.boolean().optional(),
+  /** HWND of the foreground window when the loop started, as a decimal
+   *  string. Executor compares against the live foreground before each
+   *  destructive action and aborts with `foreground_changed` if the user
+   *  Alt-Tab'd away mid-loop. Optional for back-compat — when absent the
+   *  check is a no-op. */
+  expectedForegroundHwnd: z.string().optional(),
 });
 export type ComputerExecuteRequest = z.infer<typeof ComputerExecuteRequestSchema>;
 

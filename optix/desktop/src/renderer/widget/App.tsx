@@ -1436,6 +1436,19 @@ export function App() {
       // than mid-stream 401 once auth swaps under us.
       loopStartProviderRef.current = settingsRef.current?.activeProviderId ?? null;
 
+      // Snapshot the foreground window HWND once at loop start. The
+      // executor receives this on every destructive dispatch and aborts
+      // with `foreground_changed` if the user Alt-Tab'd away mid-loop —
+      // prevents a stray click landing in the wrong app. The query is
+      // best-effort; if it fails (PowerShell helper hiccup) we fall
+      // back to an unguarded loop rather than blocking the user.
+      let loopExpectedHwnd: string | null = null;
+      try {
+        loopExpectedHwnd = await window.optix.capture.foregroundHwnd();
+      } catch {
+        // best-effort — leave null and skip the per-action guard.
+      }
+
       const allItems: LoopItem[] = [];
       let curImageWidth = imageWidth;
       let curImageHeight = imageHeight;
@@ -1906,7 +1919,10 @@ export function App() {
             // type, we follow with a fresh screenshot so the model sees the
             // post-action state.
             // eslint-disable-next-line no-await-in-loop
-            const lr = await window.optix.computer.executeLabel({ action: action.data });
+            const lr = await window.optix.computer.executeLabel({
+              action: action.data,
+              ...(loopExpectedHwnd ? { expectedForegroundHwnd: loopExpectedHwnd } : {}),
+            });
             if (lr.ok) {
               if (lr.text) resultText = lr.text;
               postActionCapture = true;
@@ -1933,6 +1949,7 @@ export function App() {
               imageWidth: curImageWidth,
               imageHeight: curImageHeight,
               snapToUia,
+              ...(loopExpectedHwnd ? { expectedForegroundHwnd: loopExpectedHwnd } : {}),
             });
             if (cr.ok) {
               if (cr.text) resultText = cr.text;
