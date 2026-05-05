@@ -654,7 +654,7 @@ function setupContactModal() {
         if (res.status === 429) {
           showError('Too many submissions. Please wait a few minutes and try again.');
         } else {
-          showError("Something went wrong. Please try again, or email admin@covetable.com.au directly.");
+          showError("Something went wrong. Please try again, or email support@covetable.com.au directly.");
         }
         return;
       }
@@ -666,7 +666,7 @@ function setupContactModal() {
       if (err instanceof DOMException && err.name === 'AbortError') {
         showError('Submission timed out. Please check your connection and try again.');
       } else {
-        showError("Couldn't reach the server. Please try again, or email admin@covetable.com.au directly.");
+        showError("Couldn't reach the server. Please try again, or email support@covetable.com.au directly.");
       }
     } finally {
       clearTimeout(timer);

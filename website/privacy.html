@@ -34,12 +34,12 @@
 
       <article class="legal__article">
         <p class="legal__lede">
-          This policy explains what data Optix collects, why, where it's stored, who else sees it, how long it sticks around, and how you can get rid of it. We've tried to write it in plain English. If anything is unclear, email <a href="mailto:admin@covetable.com.au">admin@covetable.com.au</a>.
+          This policy explains what data Optix collects, why, where it's stored, who else sees it, how long it sticks around, and how you can get rid of it. We've tried to write it in plain English. If anything is unclear, email <a href="mailto:support@covetable.com.au">support@covetable.com.au</a>.
         </p>
 
         <h2>1. Who we are</h2>
         <p>
-          "Optix", "we", "us", or "our" refers to <strong>Covetable Pty Ltd</strong>, an Australian company that builds and operates the Optix desktop application and the Optix Cloud subscription service. You can reach us at <a href="mailto:admin@covetable.com.au">admin@covetable.com.au</a>.
+          "Optix", "we", "us", or "our" refers to <strong>Covetable Pty Ltd</strong>, an Australian company that builds and operates the Optix desktop application and the Optix Cloud subscription service. You can reach us at <a href="mailto:support@covetable.com.au">support@covetable.com.au</a>.
         </p>
 
         <h2>2. What this policy covers</h2>
@@ -101,13 +101,13 @@
 
         <h3>4.3 What goes to Optix Cloud (only if you subscribe)</h3>
         <p>
-          If you subscribe to Optix Cloud, your prompts pass through our relay (a Firebase Cloud Function) on the way to Anthropic. We architected the relay to handle as little of your content as possible:
+          If you subscribe to Optix Cloud, your prompts pass through our cloud relay on the way to Anthropic. We architected the relay to handle as little of your content as possible:
         </p>
         <ul>
           <li>The request body is <strong>forwarded byte-for-byte</strong> to Anthropic. We do not inspect, modify, or store it.</li>
           <li>The relay <strong>does not log prompt text, screenshot bytes, or model output</strong>. Multiple comments in our source code enforce this; you can inspect the source code if you have access to the repository.</li>
-          <li>What we <strong>do</strong> store in Firestore: per-month token totals (input, output, cache-create, cache-read), request count, last-request timestamp. This drives the usage meter in Settings and enforces your monthly token allowance.</li>
-          <li>What's logged for diagnostics: error traces with your Firebase user ID only — never email, never IP for the relay path, never content.</li>
+          <li>What we <strong>do</strong> store in our account database: per-month token totals (input, output, cache-create, cache-read), request count, last-request timestamp. This drives the usage meter in Settings and enforces your monthly token allowance.</li>
+          <li>What's logged for diagnostics: error traces with your account ID only. Never email, never IP for the relay path, never content.</li>
         </ul>
 
         <h3>4.4 Account information (Optix Cloud only)</h3>
@@ -116,11 +116,11 @@
         </p>
         <ul>
           <li>Your <strong>email address</strong>, used for the sign-in link and as your account identifier.</li>
-          <li>A <strong>Firebase user ID</strong> generated for you on signup.</li>
-          <li>Your <strong>display name</strong> if Firebase Auth derives one (typically empty).</li>
+          <li>A unique <strong>account ID</strong> generated for you on signup.</li>
+          <li>Your <strong>display name</strong> if our sign-in system derives one (typically empty).</li>
         </ul>
         <p>
-          Stored in Firebase Authentication and (mirrored) in a Firestore document at <code>users/{your-uid}</code>. BYO-key users (those using their own Anthropic / OpenAI / Kimi / Gemini key) never sign in and never have an account with us.
+          Stored in our authentication system and mirrored in our account database. BYO-key users (those using their own Anthropic / OpenAI / Kimi / Gemini key) never sign in and never have an account with us.
         </p>
 
         <h3>4.5 Billing information (Optix Cloud only)</h3>
@@ -129,20 +129,20 @@
         </p>
         <ul>
           <li>Stripe collects your <strong>payment method, billing address, and any 3DS challenge data</strong>. We never see your card number — Stripe's hosted checkout page handles it directly.</li>
-          <li>Optix's backend stores your <strong>Stripe customer ID, subscription ID, plan tier, billing period end, and subscription status</strong> in your Firestore profile. We use these to enforce your token allowance and show your plan in Settings.</li>
+          <li>Optix's backend stores your <strong>Stripe customer ID, subscription ID, plan tier, billing period end, and subscription status</strong> in your account profile. We use these to enforce your token allowance and show your plan in Settings.</li>
           <li>Stripe webhook events update your subscription status and tier when you upgrade, downgrade, cancel, or your card fails.</li>
         </ul>
 
         <h3>4.6 Support form submissions</h3>
         <p>
-          If you submit the in-app or on-site support form, the submission is sent to <code>admin@covetable.com.au</code> via SMTP. The email contains:
+          If you submit the in-app or on-site support form, the submission is delivered to our support inbox. The message contains:
         </p>
         <ul>
           <li>Anything you typed: name, email, subject, message, topic.</li>
           <li>Diagnostic info auto-included so we can reproduce issues: <strong>app version, browser/OS user agent, locale, your active provider (if signed in), your Optix Cloud account email (if signed in), your IP address, submission timestamp</strong>.</li>
         </ul>
         <p>
-          The Cloud Function that receives the submission does not store the body. It only logs whether the submission was authenticated and the IP address (used for rate limiting). The email itself is retained in our support inbox per Rackspace's mail-server policy.
+          The system that receives the submission does not store the body anywhere outside the support inbox itself. It only logs whether the submission was authenticated and the source IP (used for rate limiting). The email is retained in our inbox until we delete it manually.
         </p>
 
         <h2>5. What we do <em>not</em> collect</h2>
@@ -160,9 +160,8 @@
           <li><strong>OpenAI</strong> — when you use OpenAI as your provider with your own key. <a href="https://openai.com/policies/privacy-policy/" target="_blank" rel="noopener noreferrer">OpenAI privacy policy</a>.</li>
           <li><strong>Moonshot AI (Kimi)</strong> — when you use Kimi as your provider. <a href="https://platform.moonshot.ai" target="_blank" rel="noopener noreferrer">Moonshot AI</a>.</li>
           <li><strong>Google AI / Gemini</strong> — when you use Gemini as your provider. <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener noreferrer">Google AI terms</a>.</li>
-          <li><strong>Firebase / Google Cloud</strong> — hosting for our relay and authentication backend (Optix Cloud users only). <a href="https://firebase.google.com/support/privacy" target="_blank" rel="noopener noreferrer">Firebase privacy</a>.</li>
+          <li><strong>Google Cloud Platform</strong> — runs our authentication system, account database, and the Optix Cloud relay infrastructure. Used for Optix Cloud subscribers only. <a href="https://firebase.google.com/support/privacy" target="_blank" rel="noopener noreferrer">Privacy notice</a>.</li>
           <li><strong>Stripe</strong> — payment processing for Optix Cloud subscriptions. <a href="https://stripe.com/privacy" target="_blank" rel="noopener noreferrer">Stripe privacy policy</a>.</li>
-          <li><strong>Rackspace Email</strong> — receives our support inbox traffic. <a href="https://www.rackspace.com/information/legal/privacystatement" target="_blank" rel="noopener noreferrer">Rackspace privacy statement</a>.</li>
           <li><strong>DuckDuckGo</strong> — used as a web-search fallback when the model needs current information and your provider doesn't have native search. We send only the search query. <a href="https://duckduckgo.com/privacy" target="_blank" rel="noopener noreferrer">DuckDuckGo privacy policy</a>.</li>
         </ul>
         <p>
@@ -171,7 +170,7 @@
 
         <h2>7. Where data is processed</h2>
         <p>
-          Optix Cloud's relay and Firestore data are hosted in <strong>Google Cloud's <code>us-central1</code> region</strong> (Iowa, USA). The desktop app keeps everything else on your local machine, in whichever country you're in.
+          Optix Cloud's relay and account database are hosted in <strong>Google Cloud's <code>us-central1</code> region</strong> (Iowa, USA). The desktop app keeps everything else on your local machine, in whichever country you're in.
         </p>
         <p>
           If you're in the EU, UK, or other jurisdictions with data-export rules: by using Optix Cloud you consent to your account data being processed in the United States. If this is a problem for you, please email us before subscribing — we'll discuss whether it makes sense for you to use Optix Cloud or stay on BYO-key (which keeps everything on your device + with your chosen provider).
@@ -180,12 +179,12 @@
         <h2 id="retention">8. How long we keep your data</h2>
         <ul>
           <li><strong>On your device</strong> (settings, audit logs, conversations, routines, plans, OS keychain entries) — kept indefinitely until you delete it. The app has UI to delete each one individually.</li>
-          <li><strong>Firestore profile + usage counters</strong> — kept for the lifetime of your account. Deleted when you delete your account (see section 10).</li>
-          <li><strong>Firebase Authentication record</strong> — kept until you delete your account.</li>
-          <li><strong>Cloud Function logs</strong> — kept ~30 days (Google Cloud Logging default retention) and contain no content, only error traces and user IDs.</li>
-          <li><strong>Firestore automatic backups</strong> — Google Cloud's default ~7-day point-in-time recovery window.</li>
+          <li><strong>Your Optix Cloud profile + usage counters</strong> — kept for the lifetime of your account. Deleted when you delete your account (see section 10).</li>
+          <li><strong>Your sign-in record in our authentication system</strong> — kept until you delete your account.</li>
+          <li><strong>Server logs</strong> — kept ~30 days (Google Cloud Logging's default retention) and contain no content, only error traces and account IDs.</li>
+          <li><strong>Database automatic backups</strong> — Google Cloud's default ~7-day point-in-time recovery window.</li>
           <li><strong>Stripe</strong> — Stripe retains payment records per their own policy and per applicable financial regulations (typically 7 years for PCI compliance). When your account is deleted, your subscription is cancelled but Stripe's invoice history persists on their side.</li>
-          <li><strong>Support emails</strong> — retained in our Rackspace inbox per their default retention. We don't auto-purge.</li>
+          <li><strong>Support emails</strong> — retained in our support inbox until we delete them manually.</li>
         </ul>
 
         <h2>9. Privacy controls inside the app</h2>
@@ -202,10 +201,10 @@
           Under Australian Privacy Principles (Privacy Act 1988) — and in line with GDPR / UK GDPR / CCPA principles — you can:
         </p>
         <ul>
-          <li><strong>Access</strong> a copy of the personal information we hold about you. Email <a href="mailto:admin@covetable.com.au">admin@covetable.com.au</a> and we'll respond within 30 days. (For most data this is just your Firestore profile and usage counters; on-device data is already in your hands.)</li>
+          <li><strong>Access</strong> a copy of the personal information we hold about you. Email <a href="mailto:support@covetable.com.au">support@covetable.com.au</a> and we'll respond within 30 days. (For most data this is just your Optix Cloud profile and usage counters; on-device data is already in your hands.)</li>
           <li><strong>Correct</strong> inaccurate information. Same email address.</li>
-          <li><strong>Delete your account</strong> and all associated data. Email us and we'll delete your Firebase Auth record (which automatically purges your Firestore profile, your usage counters, and immediately cancels any active Stripe subscription). On-device data is yours to delete via the app's UI.</li>
-          <li><strong>Export</strong> your data. Audit logs, chat history, and routines are stored as JSON on your device — you already have the files. For your Firestore profile, ask via email and we'll send it to you.</li>
+          <li><strong>Delete your account</strong> and all associated data. Email us and we'll delete your sign-in record, which automatically purges your account profile, your usage counters, and immediately cancels any active Stripe subscription. On-device data is yours to delete via the app's UI.</li>
+          <li><strong>Export</strong> your data. Audit logs, chat history, and routines are stored as JSON on your device — you already have the files. For your Optix Cloud profile, ask via email and we'll send it to you.</li>
           <li><strong>Object</strong> to processing or <strong>complain</strong> to the Australian Office of the Australian Information Commissioner (<a href="https://www.oaic.gov.au" target="_blank" rel="noopener noreferrer">oaic.gov.au</a>) or your local equivalent.</li>
         </ul>
 
@@ -222,11 +221,11 @@
           <li>API keys are stored in your OS keychain, never in plaintext files we control.</li>
           <li>All network traffic is over HTTPS (TLS 1.2+).</li>
           <li>The desktop renderer is sandboxed (Chromium <code>contextIsolation: true</code>, <code>sandbox: true</code>, <code>nodeIntegration: false</code>); only a narrow, validated IPC surface is exposed.</li>
-          <li>Cloud Function endpoints verify Firebase ID tokens before processing requests; rate-limiting and honeypot defenses are applied to public endpoints.</li>
+          <li>Server endpoints verify your authentication token before processing requests; rate-limiting and honeypot defenses are applied to public endpoints.</li>
           <li>Our codebase has been through nine rounds of internal security audit and hardening, with the audit log available on request.</li>
         </ul>
         <p>
-          No system is perfectly secure. If you discover a security issue, please email <a href="mailto:admin@covetable.com.au">admin@covetable.com.au</a> rather than disclosing it publicly.
+          No system is perfectly secure. If you discover a security issue, please email <a href="mailto:support@covetable.com.au">support@covetable.com.au</a> rather than disclosing it publicly.
         </p>
 
         <h2>13. Changes to this policy</h2>
@@ -236,7 +235,7 @@
 
         <h2>14. Contact us</h2>
         <p>
-          For any privacy-related question, request, complaint, or just to ask what we're doing with a piece of data: <a href="mailto:admin@covetable.com.au">admin@covetable.com.au</a>.
+          For any privacy-related question, request, complaint, or just to ask what we're doing with a piece of data: <a href="mailto:support@covetable.com.au">support@covetable.com.au</a>.
         </p>
         <p class="legal__sign-off">
           Covetable Pty Ltd<br />

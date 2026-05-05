@@ -3,7 +3,7 @@ import { getFreshIdToken } from '../firebase';
 
 // Email this form sends to. Centralised here so renaming the destination
 // (e.g. moving to a dedicated support@ address later) is a one-line edit.
-const SUPPORT_EMAIL = 'admin@covetable.com.au';
+const SUPPORT_EMAIL = 'support@covetable.com.au';
 
 // App version — injected at build time from `optix/desktop/package.json`
 // via electron-vite's `define` config (see `electron.vite.config.ts`).

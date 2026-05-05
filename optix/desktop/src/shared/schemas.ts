@@ -772,7 +772,7 @@ export type Settings = z.infer<typeof SettingsSchema>;
 
 // ---------------------------------------------------------------------------
 // Support feedback submission. The renderer's "Getting help" form posts here;
-// main forwards to the Cloud Functions relay which mails admin@covetable.com.au
+// main forwards to the Cloud Functions relay which mails support@covetable.com.au
 // via Resend / SendGrid / similar transactional service. Auth token is
 // optional — Optix Cloud users get authenticated submissions (the relay can
 // link the message to their account); BYO-key users submit anonymously.
