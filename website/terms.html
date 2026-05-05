@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Terms of Service · Optix</title>
+  <meta name="description" content="The agreement between you and Optix when you install the app or subscribe to Optix Cloud." />
+  <meta name="theme-color" content="#02141a" />
+  <link rel="canonical" href="https://optix.app/terms" />
+  <meta name="robots" content="index, follow" />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body class="legal-body">
+  <header class="nav" data-nav>
+    <a href="/" class="nav__logo" aria-label="Optix home">
+      <span class="nav__logo-mark"></span>
+      <span class="nav__logo-text">OPTIX</span>
+    </a>
+    <nav class="nav__links">
+      <a href="/#modes">How it works</a>
+      <a href="/#privacy">Privacy</a>
+      <a href="/#pricing">Pricing</a>
+      <a href="/#get-access" class="nav__cta">Download</a>
+    </nav>
+  </header>
+
+  <main class="legal">
+    <div class="container legal__container">
+      <header class="legal__header">
+        <p class="section-eyebrow">Legal</p>
+        <h1 class="legal__title">Terms of Service</h1>
+        <p class="legal__meta">Effective date: 5 May 2026 · Last updated: 5 May 2026</p>
+      </header>
+
+      <article class="legal__article">
+        <p class="legal__lede">
+          These Terms govern your use of the Optix desktop application and the Optix Cloud subscription service. Please read them. By installing the app or subscribing to Optix Cloud you agree to be bound by them. If you don't agree, don't use the service.
+        </p>
+
+        <h2>1. Who you're contracting with</h2>
+        <p>
+          "Optix", "we", "us", or "our" means <strong>Covetable Pty Ltd</strong>, an Australian company. "You" means the person or organisation using the Optix desktop app or holding an Optix Cloud subscription. Reach us at <a href="mailto:admin@covetable.com.au">admin@covetable.com.au</a>.
+        </p>
+
+        <h2>2. Definitions</h2>
+        <ul>
+          <li><strong>Optix desktop app</strong>: the floating-widget Electron application for Windows, macOS, and Linux.</li>
+          <li><strong>Optix Cloud</strong>: our managed subscription service that relays Anthropic Claude requests for paying users.</li>
+          <li><strong>BYO key</strong> ("bring your own key"): using the desktop app with your own Anthropic, OpenAI, Moonshot/Kimi, or Google Gemini API key. Free of charge from us.</li>
+          <li><strong>Modes</strong>: Ask, Access, and Automate. The three behaviours the desktop app supports. Detailed at <a href="/#modes">/#modes</a>.</li>
+          <li><strong>Routine</strong>: a sequence of actions you record once with Automate mode and replay later via the <code>/OA-N</code> slash command.</li>
+          <li><strong>Token</strong>: the unit Anthropic uses to meter API usage. For Optix Cloud, your monthly allowance is the sum of input tokens, output tokens, cache-creation tokens, and cache-read tokens reported by Anthropic.</li>
+        </ul>
+
+        <h2>3. Eligibility</h2>
+        <p>
+          You must be at least 16 years old to use Optix. You must have the authority to enter into these Terms — if you're using Optix on behalf of an organisation, you confirm you can bind it to these Terms. You must not be barred from using the service by applicable law (sanctions lists, etc.).
+        </p>
+
+        <h2>4. The service</h2>
+
+        <h3>4.1 The desktop app</h3>
+        <p>
+          The Optix desktop app is a floating widget that runs on your machine and assists you with three modes:
+        </p>
+        <ul>
+          <li><strong>Ask</strong> — single-shot Q&amp;A over a screenshot of your active window. No actions on your behalf, no file access.</li>
+          <li><strong>Access</strong> — agent loop. The app can click, type, scroll, run shell commands, and read or write files within a workspace folder you choose. Subject to the approval mode you set.</li>
+          <li><strong>Automate</strong> — Access plus recording. A task you run once becomes a routine you can replay.</li>
+        </ul>
+        <p>
+          The desktop app supports two paths: <strong>BYO key</strong> (you supply an Anthropic, OpenAI, Kimi, or Gemini key — usage is billed by that provider, not by us), and <strong>Optix Cloud</strong> (you subscribe to us; we forward your requests to Anthropic on our admin key).
+        </p>
+
+        <h3>4.2 Optix Cloud</h3>
+        <p>
+          Optix Cloud is currently offered in two tiers:
+        </p>
+        <ul>
+          <li><strong>Starter</strong> — USD $49 / month, 5,000,000 tokens / month, all three modes, web search included.</li>
+          <li><strong>Pro</strong> — USD $99 / month, 15,000,000 tokens / month, everything in Starter, priority support.</li>
+        </ul>
+        <p>
+          Optix Cloud uses Anthropic's Claude models (Opus, Sonnet, Haiku). Switching providers (OpenAI / Kimi / Gemini) is only available on the BYO-key path; Optix Cloud doesn't relay those.
+        </p>
+
+        <h3>4.3 Beta status</h3>
+        <p>
+          Optix is in early access. Distribution of binaries is currently by email request rather than public download. Features may change without notice. We don't currently offer a service-level agreement (SLA) or uptime warranty (see <a href="#warranties">section 12</a>).
+        </p>
+
+        <h2>5. Your account (Optix Cloud only)</h2>
+        <p>
+          Optix Cloud requires sign-in via passwordless email magic link. You're responsible for keeping access to the email address you use for sign-in. You agree the email address you provide is real, current, and yours.
+        </p>
+        <p>
+          BYO-key users don't sign in with us; they don't have an account in our backend at all.
+        </p>
+
+        <h2>6. Subscriptions, billing, and cancellation</h2>
+
+        <h3>6.1 How billing works</h3>
+        <p>
+          Optix Cloud subscriptions are processed by <a href="https://stripe.com" target="_blank" rel="noopener noreferrer">Stripe</a>. When you subscribe, Stripe collects your payment method directly on its hosted Checkout page; we never see your card number. Pricing is in <strong>USD</strong>. The billing cycle is monthly, anchored to your signup date (not the calendar month).
+        </p>
+
+        <h3>6.2 Token allowance</h3>
+        <p>
+          Your monthly token allowance resets on the first day of each calendar month (UTC), independent of your billing cycle. Reaching the allowance triggers a <code>monthly_allowance_exceeded</code> error from the relay; your subscription stays active and the next reset restores your access. We pre-reserve a small buffer (50,000 tokens) at the start of each request to prevent concurrent requests from racing past the cap.
+        </p>
+
+        <h3>6.3 Plan changes (upgrade / downgrade)</h3>
+        <p>
+          You can change tier at any time via the in-app billing portal or by contacting us. Stripe prorates the fee — you pay the difference for the rest of the current period or get a credit for unused time.
+        </p>
+
+        <h3>6.4 Cancellation</h3>
+        <p>
+          You can cancel from the Stripe Customer Portal (Settings → Manage Billing in the desktop app) or by emailing <a href="mailto:admin@covetable.com.au">admin@covetable.com.au</a>. Cancellations take effect at the end of the current paid period — you keep access until then, and we don't issue partial refunds for unused days. You can reactivate before the period ends to keep your subscription rolling.
+        </p>
+
+        <h3>6.5 Failed payments</h3>
+        <p>
+          If your card fails, your subscription enters <code>past_due</code>. Stripe automatically retries on its standard schedule. While past-due, your relay access is suspended (you can still use BYO key). If payment isn't recovered within Stripe's retry window (typically up to 30 days), the subscription is cancelled and your access ends.
+        </p>
+
+        <h3>6.6 Refunds</h3>
+        <p>
+          We don't issue refunds for partial months or unused tokens. If you believe a charge was made in error, email us — we review case-by-case.
+        </p>
+
+        <h3>6.7 BYO-key is free</h3>
+        <p>
+          If you use the desktop app with your own provider API key, we charge you nothing. Your provider charges you directly under their terms. We reserve the right to introduce a paid BYO-key tier in the future, but if we do, existing BYO-key users will get notice and a free path forward.
+        </p>
+
+        <h2>7. Acceptable use</h2>
+        <p>
+          Optix gives you fine-grained control over your machine through Claude. With that power comes responsibility. By using Optix you agree <strong>not</strong> to:
+        </p>
+        <ul>
+          <li>Violate <a href="https://www.anthropic.com/legal/aup" target="_blank" rel="noopener noreferrer">Anthropic's Usage Policies</a>. When you use Optix Cloud, every request is forwarded to Anthropic — their policies apply unmodified.</li>
+          <li>Use Optix to write, modify, or execute malware, ransomware, trojans, or any other malicious software.</li>
+          <li>Use Optix to harvest credentials, API keys, SSH keys, browser passwords, or other secrets, or to exfiltrate data to a third party without authorisation.</li>
+          <li>Use Optix to automate account creation, credential stuffing, CAPTCHA bypass, or any form of unauthorised access to systems you don't own or have permission to access.</li>
+          <li>Use Optix to send spam, post unsolicited messages, or systematically abuse a third party's service in violation of that service's terms.</li>
+          <li>Use Optix to scrape paywalled, copyrighted, or rate-limited content beyond what's permitted by the source.</li>
+          <li>Use Optix to process data subject to regulated frameworks (HIPAA, PCI-DSS, GDPR special-category data) without first putting appropriate agreements in place — neither we nor Anthropic offer a Business Associate Agreement, so HIPAA-regulated workflows are out of scope.</li>
+          <li>Use Optix to attack other systems on your network or pivot laterally to machines you don't own.</li>
+          <li>Generate content that's illegal in your jurisdiction or Australia, including (without limitation) child sexual abuse material, content inciting violence, or content infringing third-party intellectual property.</li>
+          <li>Reverse-engineer, decompile, disassemble, or otherwise attempt to extract the source code of the Optix binary.</li>
+          <li>Redistribute, sublicense, sell, rent, or repackage the Optix binary in any form.</li>
+        </ul>
+        <p>
+          Optix has technical safeguards in place — per-action approvals, workspace folder boundaries, cost ceilings, foreground-window checks, URL allowlisting — but these reduce risk, not eliminate it. <strong>You remain responsible for what Optix does on your machine and on your behalf.</strong>
+        </p>
+
+        <h2>8. Your content</h2>
+        <p>
+          Anything you create with Optix — your prompts, your screenshots, the files you give the agent access to, your recorded routines, your saved conversations, your audit logs — is <strong>yours</strong>. We don't claim ownership and we don't have a copy. It all stays on your machine unless you actively send it somewhere (to your model provider, to our support inbox via the contact form, or to anyone else through tools the agent uses).
+        </p>
+        <p>
+          When you submit feedback, suggestions, or bug reports through the in-app or website contact form, you grant us a perpetual, irrevocable, worldwide, royalty-free licence to use that feedback to improve the product, without any obligation to credit, compensate, or notify you. Don't send us anything you'd consider confidential.
+        </p>
+
+        <h2>9. Model output</h2>
+        <p>
+          When Optix sends your prompt to a model provider, the response that comes back is governed by that provider's terms. Anthropic, OpenAI, Moonshot, and Google all have their own positions on output ownership. We don't claim ownership of any model output and we don't intermediate the rights — see the linked terms in <a href="#third-parties">section 11</a>.
+        </p>
+
+        <h2>10. Our intellectual property</h2>
+        <p>
+          The Optix software, source code, brand name "Optix", logo, wordmark, marketing assets, the website at <code>optix.app</code>, the in-app documentation, and all other intellectual property associated with Optix are owned by Covetable Pty Ltd. All rights reserved.
+        </p>
+        <p>
+          Subject to your compliance with these Terms, we grant you a <strong>personal, non-transferable, non-exclusive, revocable</strong> licence to install and use the Optix desktop app on devices you control, for personal or internal business use. This licence does not include any right to sublicense, redistribute, modify, create derivative works of, or reverse-engineer the software. The licence terminates automatically when you stop using Optix or when these Terms terminate.
+        </p>
+        <p>
+          The desktop app incorporates open-source components (Electron, React, anime.js, robotjs, keytar, electron-store, tesseract.js, zod, and others) under their respective MIT or Apache 2.0 licences. Those licences govern their respective components only — they do not make Optix as a whole open-source.
+        </p>
+
+        <h2 id="third-parties">11. Third-party services</h2>
+        <p>
+          Optix relies on third-party services. By using Optix, you also agree to the relevant terms of:
+        </p>
+        <ul>
+          <li><strong>Anthropic</strong> — when you use Optix Cloud, or BYO Anthropic key. <a href="https://www.anthropic.com/legal/service-terms" target="_blank" rel="noopener noreferrer">Anthropic Service Terms</a> and <a href="https://www.anthropic.com/legal/aup" target="_blank" rel="noopener noreferrer">Anthropic Usage Policies</a>.</li>
+          <li><strong>OpenAI</strong> — when you BYO an OpenAI key. <a href="https://openai.com/policies/service-terms/" target="_blank" rel="noopener noreferrer">OpenAI Service Terms</a>.</li>
+          <li><strong>Moonshot AI (Kimi)</strong> — when you BYO a Kimi key.</li>
+          <li><strong>Google AI / Gemini</strong> — when you BYO a Gemini key. <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener noreferrer">Google AI terms</a>.</li>
+          <li><strong>Stripe</strong> — payment processing for Optix Cloud. <a href="https://stripe.com/legal/consumer" target="_blank" rel="noopener noreferrer">Stripe Services Agreement</a>.</li>
+          <li><strong>Firebase / Google Cloud</strong> — Optix Cloud relay backend. <a href="https://firebase.google.com/terms" target="_blank" rel="noopener noreferrer">Firebase terms</a>.</li>
+          <li><strong>DuckDuckGo</strong> — web search fallback. <a href="https://duckduckgo.com/terms" target="_blank" rel="noopener noreferrer">DuckDuckGo terms</a>.</li>
+        </ul>
+        <p>
+          We don't control these services, and we're not responsible for outages, errors, or policy changes on their end. If one of them becomes unavailable, the corresponding feature will too.
+        </p>
+
+        <h2>12. Privacy</h2>
+        <p>
+          Our <a href="/privacy">Privacy Policy</a> describes what data Optix collects, how we use it, and how long we keep it. The Privacy Policy is incorporated into these Terms by reference.
+        </p>
+
+        <h2 id="warranties">13. Warranties and disclaimers</h2>
+        <p>
+          We warrant that we'll provide Optix with reasonable skill and diligence. Apart from that, and to the maximum extent permitted by law, <strong>Optix is provided "as is" and "as available" without warranties of any kind</strong>, whether express or implied, including (without limitation):
+        </p>
+        <ul>
+          <li>That the model output will be accurate, complete, suitable for any purpose, or free of errors.</li>
+          <li>That the agent will successfully complete any task you ask it to do.</li>
+          <li>That the cost of a particular task is predictable. We estimate; the actual provider charge may differ.</li>
+          <li>That the service will be uninterrupted, error-free, or available at a particular time.</li>
+          <li>That the app will be compatible with every website, application, or operating-system version. Third-party UI changes can break automation.</li>
+          <li>That data you send to a third-party provider will remain private — that's between you and them.</li>
+        </ul>
+        <p>
+          AI models, including Claude, can produce wrong, biased, or unsafe output. The agent can mis-click, mis-type, or run unintended commands. Test new tasks before approving "trust inside the workspace" mode for them. Keep backups of files the agent has access to. If you're an Australian consumer, the Australian Consumer Law gives you certain non-excludable consumer guarantees — these Terms don't override those, and where any non-excludable guarantee applies, our liability is limited (where the law permits) to re-supplying the service or refunding the fee paid.
+        </p>
+
+        <h2>14. Limitation of liability</h2>
+        <p>
+          To the maximum extent permitted by law:
+        </p>
+        <ul>
+          <li>Neither party is liable to the other for any <strong>indirect, incidental, special, consequential, or punitive damages</strong>, or for loss of profits, revenue, data, business opportunities, or goodwill, arising from or related to these Terms or your use of Optix, even if advised of the possibility.</li>
+          <li>Our total aggregate liability to you across all claims arising from or related to these Terms is capped at the <strong>greater of (a) the fees you paid us in the 12 months preceding the claim, or (b) AUD $100</strong>. For BYO-key users (who pay us nothing), the cap is AUD $100.</li>
+          <li>Nothing in these Terms excludes or limits liability that cannot be excluded or limited under applicable law (including the Australian Consumer Law).</li>
+        </ul>
+
+        <h2>15. Indemnification</h2>
+        <p>
+          You agree to indemnify and hold harmless Covetable Pty Ltd, its directors, employees, and affiliates from any claim, demand, loss, damage, or expense (including reasonable legal fees) arising from:
+        </p>
+        <ul>
+          <li>Your breach of these Terms (including section 7's acceptable-use rules).</li>
+          <li>Your use of Optix to violate any law or any third party's rights.</li>
+          <li>Content you create or have the agent create on your behalf.</li>
+          <li>Your interactions with third-party services through Optix (including provider API charges from BYO-key usage).</li>
+        </ul>
+
+        <h2>16. Force majeure</h2>
+        <p>
+          Neither party is liable for any failure or delay in performance caused by circumstances beyond its reasonable control — including (without limitation) outages of model providers, Firebase, Stripe, or the public internet; natural disasters; acts of government; or industry-wide cybersecurity incidents.
+        </p>
+
+        <h2>17. Termination</h2>
+
+        <h3>17.1 By you</h3>
+        <p>
+          You can stop using Optix at any time. To cancel an Optix Cloud subscription, use the Stripe Customer Portal in the app or email us. To delete your Optix Cloud account entirely (which cancels your subscription immediately and purges your Firestore profile), email <a href="mailto:admin@covetable.com.au">admin@covetable.com.au</a>. The desktop app is uninstalled like any other application; on-device data is in your hands to keep or delete.
+        </p>
+
+        <h3>17.2 By us</h3>
+        <p>
+          We may suspend or terminate your access to Optix Cloud (and the BYO-key relay path) immediately if you materially breach these Terms (including the acceptable-use rules), if your subscription enters extended past-due status, or if we're required to do so by law. We may also discontinue Optix Cloud altogether on 30 days' notice — in that case we'll cancel active subscriptions and prorate any unused time.
+        </p>
+
+        <h3>17.3 Effect of termination</h3>
+        <p>
+          On termination: your Optix Cloud subscription is cancelled, your Firestore profile and usage counters are deleted, and your access to the relay ends. On-device data is yours to keep or delete; we don't reach into your machine. Sections that by their nature should survive termination — including IP, indemnification, liability limitations, governing law — survive.
+        </p>
+
+        <h2>18. Modifications to these Terms</h2>
+        <p>
+          We may change these Terms from time to time. When we make material changes, we'll update the "last updated" date at the top of this page and, for active Optix Cloud subscribers, send a notice email at least 30 days before the change takes effect. Continued use of Optix after the effective date counts as acceptance of the updated Terms. If you disagree with the changes, you can cancel your subscription at any time before they take effect.
+        </p>
+
+        <h2>19. Governing law and disputes</h2>
+        <p>
+          These Terms are governed by the laws of <strong>Victoria, Australia</strong>, without regard to conflict-of-laws principles. You and Covetable Pty Ltd irrevocably submit to the exclusive jurisdiction of the courts of Victoria for any dispute arising out of or relating to these Terms.
+        </p>
+        <p>
+          Before filing a claim, both parties agree to attempt resolution through good-faith negotiation by email for at least 30 days. Notices for legal disputes go to <a href="mailto:admin@covetable.com.au">admin@covetable.com.au</a> for us, and to the email address on your account for you.
+        </p>
+        <p>
+          If you're an Australian consumer, nothing in these Terms restricts your rights under the Australian Consumer Law, including (without limitation) your right to bring claims in your home jurisdiction or to access non-excludable consumer guarantees.
+        </p>
+
+        <h2>20. Miscellaneous</h2>
+        <ul>
+          <li><strong>Entire agreement.</strong> These Terms, together with the Privacy Policy and any service addendum we link from this page, are the entire agreement between you and us regarding Optix. They replace any prior representations or agreements (written or oral) on the same subject.</li>
+          <li><strong>Severability.</strong> If a court finds any clause unenforceable, that clause is severed and the rest stays in effect. Where we can, we'll narrow the unenforceable clause to the smallest extent needed for enforceability.</li>
+          <li><strong>Assignment.</strong> We can transfer these Terms to a successor (merger, acquisition, restructure) on notice. You can't transfer these Terms without our written consent.</li>
+          <li><strong>No waiver.</strong> Failure or delay in enforcing any clause doesn't waive that clause or any other.</li>
+          <li><strong>Notices.</strong> We contact you at the email address on your account; you contact us at <a href="mailto:admin@covetable.com.au">admin@covetable.com.au</a>. Notices are effective when sent.</li>
+          <li><strong>Independent contractors.</strong> Nothing in these Terms creates a partnership, joint venture, agency, or employment relationship between us and you.</li>
+        </ul>
+
+        <h2>21. Contact</h2>
+        <p>
+          For questions about these Terms, billing, account deletion, or anything legal: <a href="mailto:admin@covetable.com.au">admin@covetable.com.au</a>.
+        </p>
+        <p class="legal__sign-off">
+          Covetable Pty Ltd<br />
+          Australia
+        </p>
+      </article>
+
+      <nav class="legal__nav">
+        <a href="/" class="legal__back">← Back to home</a>
+        <span class="legal__nav-sep">·</span>
+        <a href="/privacy">Privacy Policy</a>
+      </nav>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer__inner">
+      <div class="footer__brand">
+        <span class="footer__mark"></span>
+        <span>OPTIX</span>
+      </div>
+      <p class="footer__copy">
+        Optix &copy; 2026 Covetable Pty Ltd. All rights reserved.
+      </p>
+      <nav class="footer__nav">
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+        <button type="button" class="footer__nav-button" data-open-contact>Contact</button>
+      </nav>
+    </div>
+  </footer>
+
+  <!-- Contact modal — same markup as homepage so the footer button works here too. -->
+  <div class="contact-modal" data-contact-modal hidden aria-hidden="true">
+    <div class="contact-modal__backdrop" data-close-contact></div>
+    <div class="contact-modal__panel" role="dialog" aria-modal="true" aria-labelledby="contact-modal-title">
+      <button type="button" class="contact-modal__close" data-close-contact aria-label="Close contact form">×</button>
+      <h2 id="contact-modal-title" class="contact-modal__title">Contact our Support Team</h2>
+      <p class="contact-modal__lede">Drop us a line. We typically reply within 1-2 days.</p>
+      <form class="contact-form" data-contact-form novalidate>
+        <div class="contact-form__honeypot" aria-hidden="true">
+          <label>Don't fill this in if you're human:
+            <input type="text" name="website" tabindex="-1" autocomplete="off" data-honeypot />
+          </label>
+        </div>
+        <label class="contact-form__row"><span class="contact-form__label">Your name <em>(optional)</em></span>
+          <input type="text" name="name" class="contact-form__input" maxlength="120" autocomplete="name" /></label>
+        <label class="contact-form__row"><span class="contact-form__label">Your email</span>
+          <input type="email" name="email" class="contact-form__input" maxlength="320" autocomplete="email" placeholder="you@example.com" required /></label>
+        <label class="contact-form__row"><span class="contact-form__label">Topic</span>
+          <select name="category" class="contact-form__input">
+            <option>Question</option><option>Bug report</option><option>Feature request</option><option>Billing / Optix Cloud</option><option>Other</option>
+          </select></label>
+        <label class="contact-form__row"><span class="contact-form__label">Subject</span>
+          <input type="text" name="subject" class="contact-form__input" maxlength="140" required /></label>
+        <label class="contact-form__row"><span class="contact-form__label">Message</span>
+          <textarea name="message" class="contact-form__input contact-form__textarea" maxlength="4000" rows="6" required placeholder="Tell us what's on your mind."></textarea>
+          <span class="contact-form__counter" data-counter>0 / 4000</span></label>
+        <div class="contact-form__error" data-form-error hidden></div>
+        <div class="contact-form__actions">
+          <button type="button" class="btn btn--ghost" data-close-contact>Cancel</button>
+          <button type="submit" class="btn btn--primary" data-submit-button>Send message</button>
+        </div>
+      </form>
+      <div class="contact-form__sent" data-sent-state hidden>
+        <div class="contact-form__sent-mark" aria-hidden="true">✓</div>
+        <h3>Message sent</h3>
+        <p>Thanks for reaching out. We typically reply within 1-2 days.</p>
+        <button type="button" class="btn btn--ghost" data-close-contact>Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

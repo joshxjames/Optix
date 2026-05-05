@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Privacy Policy · Optix</title>
+  <meta name="description" content="How Optix collects, uses, stores, and shares your data." />
+  <meta name="theme-color" content="#02141a" />
+  <link rel="canonical" href="https://optix.app/privacy" />
+  <meta name="robots" content="index, follow" />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body class="legal-body">
+  <header class="nav" data-nav>
+    <a href="/" class="nav__logo" aria-label="Optix home">
+      <span class="nav__logo-mark"></span>
+      <span class="nav__logo-text">OPTIX</span>
+    </a>
+    <nav class="nav__links">
+      <a href="/#modes">How it works</a>
+      <a href="/#privacy">Privacy</a>
+      <a href="/#pricing">Pricing</a>
+      <a href="/#get-access" class="nav__cta">Download</a>
+    </nav>
+  </header>
+
+  <main class="legal">
+    <div class="container legal__container">
+      <header class="legal__header">
+        <p class="section-eyebrow">Privacy</p>
+        <h1 class="legal__title">Privacy Policy</h1>
+        <p class="legal__meta">Effective date: 5 May 2026 · Last updated: 5 May 2026</p>
+      </header>
+
+      <article class="legal__article">
+        <p class="legal__lede">
+          This policy explains what data Optix collects, why, where it's stored, who else sees it, how long it sticks around, and how you can get rid of it. We've tried to write it in plain English. If anything is unclear, email <a href="mailto:admin@covetable.com.au">admin@covetable.com.au</a>.
+        </p>
+
+        <h2>1. Who we are</h2>
+        <p>
+          "Optix", "we", "us", or "our" refers to <strong>Covetable Pty Ltd</strong>, an Australian company that builds and operates the Optix desktop application and the Optix Cloud subscription service. You can reach us at <a href="mailto:admin@covetable.com.au">admin@covetable.com.au</a>.
+        </p>
+
+        <h2>2. What this policy covers</h2>
+        <p>This policy applies to:</p>
+        <ul>
+          <li>The <strong>Optix desktop application</strong> for Windows, macOS, and Linux.</li>
+          <li>The <strong>Optix Cloud</strong> subscription service (managed Anthropic relay).</li>
+          <li>The <strong>Optix marketing website</strong> at <code>optix.app</code>.</li>
+          <li>The <strong>Optix support form</strong> (in-app and on the website).</li>
+        </ul>
+        <p>
+          It does not cover the third-party services you may choose to use through Optix — those have their own privacy policies. We list them in <a href="#third-parties">section 7</a>.
+        </p>
+
+        <h2>3. The TL;DR</h2>
+        <ul>
+          <li>The Optix desktop app stores almost everything <strong>locally on your machine</strong> — settings, audit logs, conversation history, recorded routines. We don't have a copy.</li>
+          <li>API keys for any provider you bring (Anthropic, OpenAI, Kimi, Gemini) are stored in your <strong>operating system's keychain</strong>, encrypted at rest by your OS.</li>
+          <li>When you send a prompt, the prompt and any screenshot go to <strong>whichever model provider you chose</strong>. That's the whole point of the product.</li>
+          <li>If you subscribe to <strong>Optix Cloud</strong>, requests pass through our relay on the way to Anthropic. The relay <strong>never logs prompt content or model output</strong>; it only counts tokens for billing.</li>
+          <li>The marketing website has <strong>no analytics, no trackers, no cookies, no advertising pixels</strong>.</li>
+          <li>You can <strong>delete any local data</strong> from inside the app, and request <strong>full account deletion</strong> by emailing us.</li>
+        </ul>
+
+        <h2>4. What we collect, why, and where it lives</h2>
+
+        <h3>4.1 What stays on your machine</h3>
+        <p>
+          The Optix desktop app stores the following inside your operating system's standard application data directory (Windows <code>%APPDATA%\optix.desktop\</code>, macOS <code>~/Library/Application Support/optix.desktop/</code>, Linux <code>~/.config/optix.desktop/</code>):
+        </p>
+        <ul>
+          <li><strong>Settings</strong> — your active provider, model preferences, hotkey, approval mode, cost ceiling, workspace folder, theme. No identifying information.</li>
+          <li><strong>Widget window position</strong> — so the widget reopens where you left it.</li>
+          <li><strong>Audit logs</strong> (Access mode runs) — for each Computer Use session: your initial prompt, every model turn, every action the agent took, the actions' outcomes, token usage, and the estimated cost. Stored as JSON, one file per run.</li>
+          <li><strong>Conversation history</strong> (Ask mode) — saved Q&amp;A turns, plus any image attachments and screenshots that were part of those turns.</li>
+          <li><strong>Recorded routines</strong> (Automate mode) — the action sequence you recorded, plus the original prompt and metadata. Replayable later.</li>
+          <li><strong>Active plan</strong> — when you use the planning tool, the approved plan persists so the agent can resume.</li>
+        </ul>
+        <p>
+          Your <strong>API keys</strong> for any model provider you configure (Anthropic, OpenAI, Moonshot/Kimi, Google Gemini) are stored in your operating system's keychain — Windows Credential Manager, macOS Keychain, or Linux libsecret/GNOME Keyring. They are not in any plaintext file we control. The Optix process briefly caches them in memory to make API calls (5-minute TTL) and drops the cache on app exit.
+        </p>
+        <p>
+          We do not have access to any of the data above. It does not leave your machine unless you explicitly use a feature that sends it somewhere (next sections).
+        </p>
+
+        <h3>4.2 What goes to your model provider</h3>
+        <p>
+          When you submit a prompt, the following is sent to whichever provider you've selected (Anthropic, OpenAI, Kimi, Gemini, or Optix Cloud):
+        </p>
+        <ul>
+          <li>Your <strong>prompt text</strong>.</li>
+          <li>A <strong>screenshot of your active window</strong> (unless Privacy Pause is on; see section 8).</li>
+          <li>Any <strong>images you attached</strong> to the prompt.</li>
+          <li>In Access and Automate modes, <strong>conversation history</strong> for the current loop, plus the contents of any files the agent reads via tool calls and the output of any shell commands it runs.</li>
+        </ul>
+        <p>
+          Each provider has its own privacy policy and data-handling terms — see <a href="#third-parties">section 7</a>.
+        </p>
+
+        <h3>4.3 What goes to Optix Cloud (only if you subscribe)</h3>
+        <p>
+          If you subscribe to Optix Cloud, your prompts pass through our relay (a Firebase Cloud Function) on the way to Anthropic. We architected the relay to handle as little of your content as possible:
+        </p>
+        <ul>
+          <li>The request body is <strong>forwarded byte-for-byte</strong> to Anthropic. We do not inspect, modify, or store it.</li>
+          <li>The relay <strong>does not log prompt text, screenshot bytes, or model output</strong>. Multiple comments in our source code enforce this; you can inspect the source code if you have access to the repository.</li>
+          <li>What we <strong>do</strong> store in Firestore: per-month token totals (input, output, cache-create, cache-read), request count, last-request timestamp. This drives the usage meter in Settings and enforces your monthly token allowance.</li>
+          <li>What's logged for diagnostics: error traces with your Firebase user ID only — never email, never IP for the relay path, never content.</li>
+        </ul>
+
+        <h3>4.4 Account information (Optix Cloud only)</h3>
+        <p>
+          To use Optix Cloud, you sign in via passwordless email magic link. We collect:
+        </p>
+        <ul>
+          <li>Your <strong>email address</strong>, used for the sign-in link and as your account identifier.</li>
+          <li>A <strong>Firebase user ID</strong> generated for you on signup.</li>
+          <li>Your <strong>display name</strong> if Firebase Auth derives one (typically empty).</li>
+        </ul>
+        <p>
+          Stored in Firebase Authentication and (mirrored) in a Firestore document at <code>users/{your-uid}</code>. BYO-key users (those using their own Anthropic / OpenAI / Kimi / Gemini key) never sign in and never have an account with us.
+        </p>
+
+        <h3>4.5 Billing information (Optix Cloud only)</h3>
+        <p>
+          Subscription billing is handled by <a href="https://stripe.com/privacy" target="_blank" rel="noopener noreferrer">Stripe</a>. When you subscribe:
+        </p>
+        <ul>
+          <li>Stripe collects your <strong>payment method, billing address, and any 3DS challenge data</strong>. We never see your card number — Stripe's hosted checkout page handles it directly.</li>
+          <li>Optix's backend stores your <strong>Stripe customer ID, subscription ID, plan tier, billing period end, and subscription status</strong> in your Firestore profile. We use these to enforce your token allowance and show your plan in Settings.</li>
+          <li>Stripe webhook events update your subscription status and tier when you upgrade, downgrade, cancel, or your card fails.</li>
+        </ul>
+
+        <h3>4.6 Support form submissions</h3>
+        <p>
+          If you submit the in-app or on-site support form, the submission is sent to <code>admin@covetable.com.au</code> via SMTP. The email contains:
+        </p>
+        <ul>
+          <li>Anything you typed: name, email, subject, message, topic.</li>
+          <li>Diagnostic info auto-included so we can reproduce issues: <strong>app version, browser/OS user agent, locale, your active provider (if signed in), your Optix Cloud account email (if signed in), your IP address, submission timestamp</strong>.</li>
+        </ul>
+        <p>
+          The Cloud Function that receives the submission does not store the body. It only logs whether the submission was authenticated and the IP address (used for rate limiting). The email itself is retained in our support inbox per Rackspace's mail-server policy.
+        </p>
+
+        <h2>5. What we do <em>not</em> collect</h2>
+        <ul>
+          <li><strong>No analytics or telemetry.</strong> The marketing website at <code>optix.app</code> ships no Google Analytics, no Plausible, no Mixpanel, no Sentry, no Bugsnag, no anything. The desktop app sends no usage telemetry, no crash reports, and pings no update servers.</li>
+          <li><strong>No cookies on the marketing site.</strong> The only browser-storage write is a <code>localStorage</code> entry remembering whether you picked light or dark theme. That's it.</li>
+          <li><strong>No advertising IDs, no tracking pixels, no fingerprinting.</strong></li>
+          <li><strong>No selling of data.</strong> We do not sell, rent, or trade your data with anyone.</li>
+        </ul>
+
+        <h2 id="third-parties">6. Third parties we send data to</h2>
+        <p>This is the complete list. Each of these has its own privacy policy.</p>
+        <ul>
+          <li><strong>Anthropic</strong> — when you use Claude (BYO key, or via Optix Cloud). <a href="https://www.anthropic.com/legal/privacy" target="_blank" rel="noopener noreferrer">Anthropic privacy policy</a>.</li>
+          <li><strong>OpenAI</strong> — when you use OpenAI as your provider with your own key. <a href="https://openai.com/policies/privacy-policy/" target="_blank" rel="noopener noreferrer">OpenAI privacy policy</a>.</li>
+          <li><strong>Moonshot AI (Kimi)</strong> — when you use Kimi as your provider. <a href="https://platform.moonshot.ai" target="_blank" rel="noopener noreferrer">Moonshot AI</a>.</li>
+          <li><strong>Google AI / Gemini</strong> — when you use Gemini as your provider. <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener noreferrer">Google AI terms</a>.</li>
+          <li><strong>Firebase / Google Cloud</strong> — hosting for our relay and authentication backend (Optix Cloud users only). <a href="https://firebase.google.com/support/privacy" target="_blank" rel="noopener noreferrer">Firebase privacy</a>.</li>
+          <li><strong>Stripe</strong> — payment processing for Optix Cloud subscriptions. <a href="https://stripe.com/privacy" target="_blank" rel="noopener noreferrer">Stripe privacy policy</a>.</li>
+          <li><strong>Rackspace Email</strong> — receives our support inbox traffic. <a href="https://www.rackspace.com/information/legal/privacystatement" target="_blank" rel="noopener noreferrer">Rackspace privacy statement</a>.</li>
+          <li><strong>DuckDuckGo</strong> — used as a web-search fallback when the model needs current information and your provider doesn't have native search. We send only the search query. <a href="https://duckduckgo.com/privacy" target="_blank" rel="noopener noreferrer">DuckDuckGo privacy policy</a>.</li>
+        </ul>
+        <p>
+          We do not currently use any other third-party processors.
+        </p>
+
+        <h2>7. Where data is processed</h2>
+        <p>
+          Optix Cloud's relay and Firestore data are hosted in <strong>Google Cloud's <code>us-central1</code> region</strong> (Iowa, USA). The desktop app keeps everything else on your local machine, in whichever country you're in.
+        </p>
+        <p>
+          If you're in the EU, UK, or other jurisdictions with data-export rules: by using Optix Cloud you consent to your account data being processed in the United States. If this is a problem for you, please email us before subscribing — we'll discuss whether it makes sense for you to use Optix Cloud or stay on BYO-key (which keeps everything on your device + with your chosen provider).
+        </p>
+
+        <h2 id="retention">8. How long we keep your data</h2>
+        <ul>
+          <li><strong>On your device</strong> (settings, audit logs, conversations, routines, plans, OS keychain entries) — kept indefinitely until you delete it. The app has UI to delete each one individually.</li>
+          <li><strong>Firestore profile + usage counters</strong> — kept for the lifetime of your account. Deleted when you delete your account (see section 10).</li>
+          <li><strong>Firebase Authentication record</strong> — kept until you delete your account.</li>
+          <li><strong>Cloud Function logs</strong> — kept ~30 days (Google Cloud Logging default retention) and contain no content, only error traces and user IDs.</li>
+          <li><strong>Firestore automatic backups</strong> — Google Cloud's default ~7-day point-in-time recovery window.</li>
+          <li><strong>Stripe</strong> — Stripe retains payment records per their own policy and per applicable financial regulations (typically 7 years for PCI compliance). When your account is deleted, your subscription is cancelled but Stripe's invoice history persists on their side.</li>
+          <li><strong>Support emails</strong> — retained in our Rackspace inbox per their default retention. We don't auto-purge.</li>
+        </ul>
+
+        <h2>9. Privacy controls inside the app</h2>
+        <ul>
+          <li><strong>Privacy Pause</strong> — toggle in the widget. While paused, screen-capture is disabled. The agent can still answer follow-up questions but it can't see your screen.</li>
+          <li><strong>Approval modes</strong> — choose per-action approval, per-task approval, or "trust inside the workspace folder". Out-of-workspace shell commands and file operations always require explicit approval, regardless of mode.</li>
+          <li><strong>Workspace folder</strong> — set a directory the agent can read and write within. Anything outside it requires per-action approval. Cleared on every app start (does not persist across launches).</li>
+          <li><strong>Cost ceiling</strong> — USD-denominated cap per Access run. Stops the loop if estimated spend would exceed it.</li>
+          <li><strong>Per-feature deletion</strong> — Settings has separate UI to delete individual audit logs, conversations, routines, the active plan, and stored API keys.</li>
+        </ul>
+
+        <h2>10. Your rights</h2>
+        <p>
+          Under Australian Privacy Principles (Privacy Act 1988) — and in line with GDPR / UK GDPR / CCPA principles — you can:
+        </p>
+        <ul>
+          <li><strong>Access</strong> a copy of the personal information we hold about you. Email <a href="mailto:admin@covetable.com.au">admin@covetable.com.au</a> and we'll respond within 30 days. (For most data this is just your Firestore profile and usage counters; on-device data is already in your hands.)</li>
+          <li><strong>Correct</strong> inaccurate information. Same email address.</li>
+          <li><strong>Delete your account</strong> and all associated data. Email us and we'll delete your Firebase Auth record (which automatically purges your Firestore profile, your usage counters, and immediately cancels any active Stripe subscription). On-device data is yours to delete via the app's UI.</li>
+          <li><strong>Export</strong> your data. Audit logs, chat history, and routines are stored as JSON on your device — you already have the files. For your Firestore profile, ask via email and we'll send it to you.</li>
+          <li><strong>Object</strong> to processing or <strong>complain</strong> to the Australian Office of the Australian Information Commissioner (<a href="https://www.oaic.gov.au" target="_blank" rel="noopener noreferrer">oaic.gov.au</a>) or your local equivalent.</li>
+        </ul>
+
+        <h2>11. Children's privacy</h2>
+        <p>
+          Optix is not directed at children under 16. We do not knowingly collect data from children. If you believe a child has used Optix Cloud and given us their information, please email us and we'll delete it.
+        </p>
+
+        <h2>12. Security</h2>
+        <p>
+          We follow industry-standard practices:
+        </p>
+        <ul>
+          <li>API keys are stored in your OS keychain, never in plaintext files we control.</li>
+          <li>All network traffic is over HTTPS (TLS 1.2+).</li>
+          <li>The desktop renderer is sandboxed (Chromium <code>contextIsolation: true</code>, <code>sandbox: true</code>, <code>nodeIntegration: false</code>); only a narrow, validated IPC surface is exposed.</li>
+          <li>Cloud Function endpoints verify Firebase ID tokens before processing requests; rate-limiting and honeypot defenses are applied to public endpoints.</li>
+          <li>Our codebase has been through nine rounds of internal security audit and hardening, with the audit log available on request.</li>
+        </ul>
+        <p>
+          No system is perfectly secure. If you discover a security issue, please email <a href="mailto:admin@covetable.com.au">admin@covetable.com.au</a> rather than disclosing it publicly.
+        </p>
+
+        <h2>13. Changes to this policy</h2>
+        <p>
+          When we update this policy materially, we'll update the "last updated" date at the top of the page and, for active Optix Cloud subscribers, send an email summary of the changes. Continued use of Optix after changes are posted means you accept the updated terms.
+        </p>
+
+        <h2>14. Contact us</h2>
+        <p>
+          For any privacy-related question, request, complaint, or just to ask what we're doing with a piece of data: <a href="mailto:admin@covetable.com.au">admin@covetable.com.au</a>.
+        </p>
+        <p class="legal__sign-off">
+          Covetable Pty Ltd<br />
+          Australia
+        </p>
+      </article>
+
+      <nav class="legal__nav">
+        <a href="/" class="legal__back">← Back to home</a>
+        <span class="legal__nav-sep">·</span>
+        <a href="/terms">Terms of Service</a>
+      </nav>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer__inner">
+      <div class="footer__brand">
+        <span class="footer__mark"></span>
+        <span>OPTIX</span>
+      </div>
+      <p class="footer__copy">
+        Optix &copy; 2026 Covetable Pty Ltd. All rights reserved.
+      </p>
+      <nav class="footer__nav">
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+        <button type="button" class="footer__nav-button" data-open-contact>Contact</button>
+      </nav>
+    </div>
+  </footer>
+
+  <!-- Contact modal — same markup as the home page so the footer Contact
+       button works here too. The JS bundle wires it identically. -->
+  <div class="contact-modal" data-contact-modal hidden aria-hidden="true">
+    <div class="contact-modal__backdrop" data-close-contact></div>
+    <div class="contact-modal__panel" role="dialog" aria-modal="true" aria-labelledby="contact-modal-title">
+      <button type="button" class="contact-modal__close" data-close-contact aria-label="Close contact form">×</button>
+      <h2 id="contact-modal-title" class="contact-modal__title">Contact our Support Team</h2>
+      <p class="contact-modal__lede">Drop us a line. We typically reply within 1-2 days.</p>
+      <form class="contact-form" data-contact-form novalidate>
+        <div class="contact-form__honeypot" aria-hidden="true">
+          <label>Don't fill this in if you're human:
+            <input type="text" name="website" tabindex="-1" autocomplete="off" data-honeypot />
+          </label>
+        </div>
+        <label class="contact-form__row"><span class="contact-form__label">Your name <em>(optional)</em></span>
+          <input type="text" name="name" class="contact-form__input" maxlength="120" autocomplete="name" /></label>
+        <label class="contact-form__row"><span class="contact-form__label">Your email</span>
+          <input type="email" name="email" class="contact-form__input" maxlength="320" autocomplete="email" placeholder="you@example.com" required /></label>
+        <label class="contact-form__row"><span class="contact-form__label">Topic</span>
+          <select name="category" class="contact-form__input">
+            <option>Question</option><option>Bug report</option><option>Feature request</option><option>Billing / Optix Cloud</option><option>Other</option>
+          </select></label>
+        <label class="contact-form__row"><span class="contact-form__label">Subject</span>
+          <input type="text" name="subject" class="contact-form__input" maxlength="140" required /></label>
+        <label class="contact-form__row"><span class="contact-form__label">Message</span>
+          <textarea name="message" class="contact-form__input contact-form__textarea" maxlength="4000" rows="6" required placeholder="Tell us what's on your mind."></textarea>
+          <span class="contact-form__counter" data-counter>0 / 4000</span></label>
+        <div class="contact-form__error" data-form-error hidden></div>
+        <div class="contact-form__actions">
+          <button type="button" class="btn btn--ghost" data-close-contact>Cancel</button>
+          <button type="submit" class="btn btn--primary" data-submit-button>Send message</button>
+        </div>
+      </form>
+      <div class="contact-form__sent" data-sent-state hidden>
+        <div class="contact-form__sent-mark" aria-hidden="true">✓</div>
+        <h3>Message sent</h3>
+        <p>Thanks for reaching out. We typically reply within 1-2 days.</p>
+        <button type="button" class="btn btn--ghost" data-close-contact>Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
