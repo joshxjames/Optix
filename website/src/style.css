@@ -17,22 +17,33 @@
 /* ---------- 1. tokens + reset + base ----------------------------------- */
 
 :root {
-  /* Optix is a dark-first product — site mirrors that aesthetic. Light variant
-     not yet a goal; if it ever is, prefer toggling these tokens via a
-     [data-theme="light"] override on <html>. */
-  --bg: #08090c;
-  --bg-soft: #0e1015;
-  --bg-elev: #14171e;
-  --bg-glass: rgba(20, 23, 30, 0.6);
-  --fg: #f5f6f8;
-  --fg-muted: #a1a5b1;
-  --fg-dim: #6a6f7c;
-  --accent: #6d8cff;
-  --accent-warm: #8c7dff;
-  --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.16);
-  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-card: 0 20px 40px -20px rgba(0, 0, 0, 0.7);
+  /* Palette pulled from the hero video: deep teal-black space with an
+     electric-cyan energy core and warm amber/gold curls as the secondary
+     warm accent. The soft surfaces have a slight cyan undertone (not pure
+     greys) so cards feel like they're part of the same atmosphere as the
+     hero rather than a separate dark UI shell.
+
+     Light variant not yet a goal; if it ever is, prefer toggling these
+     tokens via a [data-theme="light"] override on <html>. */
+  --bg: #02161b;            /* deep teal-black — matches the surrounding void */
+  --bg-soft: #062229;       /* slightly elevated, faint cyan undertone */
+  --bg-elev: #0a2d36;       /* card surfaces, deeper teal */
+  --bg-glass: rgba(10, 45, 54, 0.6);
+  --fg: #eaf8fb;            /* slight cool tint on the white text — sits well on teal */
+  --fg-muted: #8fa9ae;
+  --fg-dim: #4f6065;
+
+  /* Primary: electric cyan from the energy core. Secondary: warm amber/gold
+     from the curls at top + bottom of the nebula. Tertiary teal-green is a
+     mid-tone the rest of the gradients can pivot through. */
+  --accent: #22e3ff;
+  --accent-warm: #f4c285;
+  --accent-secondary: #3aebc8;
+
+  --border: rgba(34, 227, 255, 0.08);     /* cyan-tinged borders, subtle */
+  --border-strong: rgba(34, 227, 255, 0.22);
+  --shadow-soft: 0 1px 2px rgba(0, 8, 12, 0.4);
+  --shadow-card: 0 20px 40px -20px rgba(0, 8, 12, 0.8);
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 18px;
@@ -56,14 +67,15 @@ body {
 }
 
 /* Subtle fixed background — radial gradient so the page has depth even where
-   content is sparse. Sits behind everything; pointer-events none. */
+   content is sparse. Cyan + amber poles match the hero nebula's energy
+   distribution. Sits behind everything; pointer-events none. */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
   background:
-    radial-gradient(80% 50% at 20% 0%, rgba(109, 140, 255, 0.08), transparent 60%),
-    radial-gradient(60% 40% at 90% 50%, rgba(140, 125, 255, 0.06), transparent 60%);
+    radial-gradient(80% 50% at 20% 0%, rgba(34, 227, 255, 0.07), transparent 60%),
+    radial-gradient(60% 40% at 90% 50%, rgba(244, 194, 133, 0.04), transparent 60%);
   pointer-events: none;
   z-index: -1;
 }
@@ -84,7 +96,7 @@ code {
   font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Consolas, monospace;
   font-size: 0.9em;
   color: var(--accent);
-  background: rgba(109, 140, 255, 0.08);
+  background: rgba(34, 227, 255, 0.08);
   padding: 1px 5px;
   border-radius: 3px;
 }
@@ -144,9 +156,9 @@ section { padding: var(--section-pad) 0; position: relative; }
   background: linear-gradient(135deg, var(--accent), var(--accent-warm));
   color: #0a0a0a;
   font-weight: 600;
-  box-shadow: 0 6px 20px -8px rgba(109, 140, 255, 0.6);
+  box-shadow: 0 6px 20px -8px rgba(34, 227, 255, 0.6);
 }
-.btn--primary:hover { transform: translateY(-1px); box-shadow: 0 10px 26px -8px rgba(109, 140, 255, 0.8); }
+.btn--primary:hover { transform: translateY(-1px); box-shadow: 0 10px 26px -8px rgba(34, 227, 255, 0.8); }
 .btn--ghost {
   background: transparent;
   color: var(--fg);
@@ -174,7 +186,7 @@ section { padding: var(--section-pad) 0; position: relative; }
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: linear-gradient(to bottom, rgba(8, 9, 12, 0.85), rgba(8, 9, 12, 0));
+  background: linear-gradient(to bottom, rgba(2, 22, 27, 0.85), rgba(2, 22, 27, 0));
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   transform: translateY(0);
@@ -247,8 +259,8 @@ section { padding: var(--section-pad) 0; position: relative; }
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(to top, rgba(8, 9, 12, 0.92) 0%, rgba(8, 9, 12, 0.4) 40%, rgba(8, 9, 12, 0.6) 100%),
-    linear-gradient(to right, rgba(8, 9, 12, 0.55) 0%, rgba(8, 9, 12, 0) 60%);
+    linear-gradient(to top, rgba(2, 22, 27, 0.92) 0%, rgba(2, 22, 27, 0.4) 40%, rgba(2, 22, 27, 0.6) 100%),
+    linear-gradient(to right, rgba(2, 22, 27, 0.55) 0%, rgba(2, 22, 27, 0) 60%);
   z-index: 1;
 }
 .hero__copy {
@@ -356,7 +368,7 @@ section { padding: var(--section-pad) 0; position: relative; }
 }
 .mode-card:hover {
   border-color: var(--accent);
-  box-shadow: var(--shadow-card), 0 0 60px -20px rgba(109, 140, 255, 0.4);
+  box-shadow: var(--shadow-card), 0 0 60px -20px rgba(34, 227, 255, 0.4);
 }
 .mode-card__num {
   display: block;
@@ -462,7 +474,7 @@ section { padding: var(--section-pad) 0; position: relative; }
   border: 1px solid var(--accent);
   border-radius: 12px;
   padding: 14px 16px;
-  box-shadow: var(--shadow-card), 0 0 40px -10px rgba(109, 140, 255, 0.6);
+  box-shadow: var(--shadow-card), 0 0 40px -10px rgba(34, 227, 255, 0.6);
   /* Subtle float animation */
   animation: widget-float 5s ease-in-out infinite;
 }
@@ -544,7 +556,7 @@ section { padding: var(--section-pad) 0; position: relative; }
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: rgba(109, 140, 255, 0.12);
+  background: rgba(34, 227, 255, 0.12);
   color: var(--accent);
   font-size: 18px;
   margin-bottom: 16px;
@@ -576,7 +588,7 @@ section { padding: var(--section-pad) 0; position: relative; }
 
 .plan-card--featured {
   border-color: var(--accent);
-  background: linear-gradient(180deg, rgba(109, 140, 255, 0.06) 0%, var(--bg-elev) 80%);
+  background: linear-gradient(180deg, rgba(34, 227, 255, 0.06) 0%, var(--bg-elev) 80%);
 }
 .plan-card--featured:hover { border-color: var(--accent); }
 
